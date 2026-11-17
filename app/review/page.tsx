@@ -338,7 +338,7 @@ export default function ReviewPage() {
               </span>
             </div>
             {showCard ? (
-              <WordCardView card={w} note={w.note} />
+              <WordCardView card={w} note={w.note} drawing={w.drawing} />
             ) : (
               <button type="button" className="btn-small self-start" onClick={() => setShowCard(true)}>Show card</button>
             )}

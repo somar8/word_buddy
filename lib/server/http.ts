@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
+import { DEFAULT_LEVEL, toLevel, type Level } from "@/lib/levels";
 
 export class HttpError extends Error {
   constructor(
@@ -21,7 +22,7 @@ function env(name: string): string {
  */
 export async function requireUser(
   req: Request,
-): Promise<{ user: User; supabase: SupabaseClient }> {
+): Promise<{ user: User; supabase: SupabaseClient; level: Level }> {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) throw new HttpError(401, "Please sign in again.");
 
@@ -45,7 +46,8 @@ export async function requireUser(
   if (allowed.length > 0 && !allowed.includes(email)) {
     throw new HttpError(403, "This account is not allowed to use Word Buddy.");
   }
-  return { user: data.user, supabase };
+  const level = toLevel(data.user.user_metadata?.level) ?? DEFAULT_LEVEL;
+  return { user: data.user, supabase, level };
 }
 
 /** A database client with full access, for the daily reminder job only. */

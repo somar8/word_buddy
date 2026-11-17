@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { englishFirst } from "@/lib/levels";
 import type { Card } from "@/lib/types";
+import { useLevel } from "./AppShell";
 import SpeakButton from "./SpeakButton";
 
 /** Highlights the target word (or its first 4 letters, to catch inflected forms) in a sentence. */
@@ -23,8 +25,13 @@ export function Highlight({ text, word }: { text: string; word: string }) {
 }
 
 /** Read-only word card: used in the word list and after a review answer. */
-export default function WordCardView({ card, note }: { card: Omit<Card, "found">; note?: string }) {
-  const [english, setEnglish] = useState(false);
+export default function WordCardView({ card, note, drawing, level }: {
+  card: Omit<Card, "found">;
+  note?: string;
+  drawing?: string | null;
+  level?: string;
+}) {
+  const [english, setEnglish] = useState(englishFirst(useLevel()));
   const full = card.article ? `${card.article} ${card.word}` : card.word;
 
   return (
@@ -38,6 +45,7 @@ export default function WordCardView({ card, note }: { card: Omit<Card, "found">
           <span lang="nl" className="text-[13px] text-muted">
             {[card.part_of_speech, card.forms].filter(Boolean).join(" · ")}
           </span>
+          {level && <span className="text-xs text-muted">Card written for level {level}</span>}
         </div>
         <SpeakButton text={full} />
       </div>
@@ -80,6 +88,15 @@ export default function WordCardView({ card, note }: { card: Omit<Card, "found">
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {drawing && (
+        <div className="flex flex-col gap-1.5">
+          <span className="label">Mijn tekening</span>
+          {/* eslint-disable-next-line @next/next/no-img-element -- a data URL from the database */}
+          <img src={drawing} alt={`Your drawing for ${card.word}`}
+            className="aspect-square w-40 rounded-xl border border-hairline bg-white" />
         </div>
       )}
 

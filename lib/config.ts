@@ -1,7 +1,6 @@
-/** The MVP is Dutch at B1 only. Levels and languages become settings in the next phase. */
+/** Dutch only for now; each user's level lives in lib/levels.ts. Other languages come later. */
 export const TARGET_LANGUAGE = "Dutch";
 export const SUPPORT_LANGUAGE = "English";
-export const LEVEL = "B1";
 
 /** Days after adding a word when each of the 6 reviews is due. */
 export const REVIEW_DAYS = [1, 3, 7, 14, 30, 60];

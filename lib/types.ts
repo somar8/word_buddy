@@ -27,6 +27,8 @@ export type AiTask = {
 export type Word = Omit<Card, "found"> & {
   id: string;
   note: string;
+  level: string; // level the card was made for (A1-C2)
+  drawing: string | null; // the learner's own sketch (PNG data URL)
   stage: number; // 1..6 = next review number, 7 = learned
   due_on: string; // YYYY-MM-DD
   added_on: string; // YYYY-MM-DD

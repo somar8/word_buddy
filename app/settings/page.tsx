@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession } from "@/components/AppShell";
+import { saveLevel, useLevel, useSession } from "@/components/AppShell";
+import LevelPicker from "@/components/LevelPicker";
 import PageHeader from "@/components/PageHeader";
+import type { Level } from "@/lib/levels";
 import { api, supabase } from "@/lib/supabase";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
@@ -33,7 +35,15 @@ export default function SettingsPage() {
         setPush("blocked");
         return;
       }
-      const reg = await navigator.serviceWorker.ready;
+      // In browsers that block service workers, "ready" never settles: give up after 5 seconds.
+      const reg = await Promise.race([
+        navigator.serviceWorker.ready,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000)),
+      ]);
+      if (!reg) {
+        setPush("unsupported");
+        return;
+      }
       const sub = await reg.pushManager.getSubscription();
       setPush(sub ? "on" : "off");
     }
@@ -101,6 +111,8 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" />
       <main className="flex flex-col gap-4 px-5 pb-6 pt-2">
+        <LevelSection />
+
         <section aria-labelledby="reminders" className="panel flex flex-col gap-3 p-5">
           <h2 id="reminders" className="font-display text-lg font-bold">Daily reminder</h2>
           <p className="text-[15px] leading-relaxed text-soft">
@@ -114,7 +126,11 @@ export default function SettingsPage() {
               <strong>Add to Home Screen</strong>. Open it from there and come back to this page.
             </p>
           )}
-          {push === "unsupported" && <p className="text-[15px]">This browser cannot show notifications.</p>}
+          {push === "unsupported" && (
+            <p className="text-[15px]">
+              This browser cannot show notifications. Open Word Buddy in Chrome or Safari, or on your phone.
+            </p>
+          )}
           {push === "blocked" && (
             <p className="text-[15px]">Notifications are blocked. Allow them for this site in your phone&apos;s settings.</p>
           )}
@@ -137,5 +153,34 @@ export default function SettingsPage() {
         </section>
       </main>
     </>
+  );
+}
+
+function LevelSection() {
+  const current = useLevel();
+  const [level, setLevel] = useState<Level>(current);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function save() {
+    setBusy(true);
+    setMessage(null);
+    const error = await saveLevel(level);
+    setBusy(false);
+    setMessage(error ?? `Level set to ${level}.`);
+  }
+
+  return (
+    <section id="level" aria-labelledby="level-title" className="panel flex scroll-mt-4 flex-col gap-3 p-5">
+      <h2 id="level-title" className="font-display text-lg font-bold">Level</h2>
+      <p className="text-[15px] leading-relaxed text-soft">
+        New cards, exercises and tests are written for this level. Words you already saved keep their card.
+      </p>
+      <LevelPicker value={level} onChange={(l) => { setLevel(l); setMessage(null); }} />
+      <button type="button" className="btn-primary" disabled={busy || level === current} onClick={save}>
+        {busy ? "Saving…" : "Save level"}
+      </button>
+      {message && <p role="status" className="text-sm text-soft">{message}</p>}
+    </section>
   );
 }

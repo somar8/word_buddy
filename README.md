@@ -1,9 +1,10 @@
 # Word Buddy
 
-A personal Dutch word coach (MVP: Dutch, level B1). You type a new word, the app
-builds a card — a meaning in simple Dutch, English as backup, B1 example sentences
-and related words — and brings the word back after 1, 3, 7, 14, 30 and 60 days.
-Each review is a little harder than the one before.
+A personal Dutch word coach for every level (A1–C2). You pick your level when you
+sign up. You type a new word, the app builds a card for your level — a meaning in
+Dutch, English as backup, example sentences, related words and your own drawing —
+and brings the word back after 1, 3, 7, 14, 30 and 60 days. Each review is a little
+harder than the one before.
 
 ## Free stack (€0 per month)
 
@@ -19,7 +20,14 @@ No credit card is needed for any of these.
 
 ## How the app works
 
-- **Add** (`app/add`): `/api/card` asks Gemini for the card. You can edit it before you save.
+- **Level**: chosen at sign-up (or on first sign-in for older accounts) and changeable in Settings. It is stored in the
+  Supabase Auth user metadata, and every AI prompt uses it (`lib/levels.ts`). A1 and A2 show English straight away.
+- **Add** (`app/add`): `/api/card` asks Gemini for the card. The card is split into numbered sections (word, meaning,
+  examples, related words, drawing, note) that you can check and edit before you save.
+- **Drawing**: an optional sketch pad (`components/DrawingPad.tsx`) on the Add screen and on each word's page.
+  The drawing is saved as a small PNG in the `words.drawing` column.
+- **Test** (`app/test`): a practice test on the words added today (or due today). Step 1: match each English meaning
+  with its Dutch word. Step 2: one tab per word with a sentence to fill in. It does not change the review plan.
 - **Review** (`app/review`): up to 60 words a day. The exercise type follows the review number:
   1 meaning → 2 type the word with de/het → 3 fill the gap → 4 choose the word → 5 write your own sentence → 6 mixed.
   Fresh gap sentences for all of the day's words come from ONE Gemini call (`/api/tasks`), which stores them for that day.
@@ -37,6 +45,7 @@ No credit card is needed for any of these.
 ### 2. Create the Supabase project
 1. Sign up at <https://supabase.com> and create a **New project** (choose a region in Europe, for example Frankfurt).
 2. Open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and click **Run**.
+   (Already ran it before? Run it again: it adds the new `level` and `drawing` columns and keeps your words.)
 3. Click **Connect** at the top of the project page and copy the **Project URL** (`https://<project-id>.supabase.co`).
 4. Open **Project Settings → API Keys** and copy the **publishable key** (for `NEXT_PUBLIC_SUPABASE_ANON_KEY`) and the **secret key** (for `SUPABASE_SERVICE_ROLE_KEY`).
 
@@ -84,7 +93,7 @@ Every push to the GitHub `main` branch deploys a new version automatically.
 
 ## Not in the MVP yet
 
-- **Pictures** (AI picture, drawing, photo): next phase. AI image models are not on Gemini's free tier.
-- **Levels other than B1 and other languages**: next phase. The B1 level and Dutch are set in `lib/config.ts`.
+- **AI pictures and photos**: next phase. AI image models are not on Gemini's free tier. Your own drawing works now.
+- **Other languages**: next phase. Dutch is set in `lib/config.ts`.
 - **Choosing your own reminder time**: the free Vercel plan allows one fixed daily job.
 - **Checking de/het against a dictionary**: the AI sets the article, and you can correct it before saving.

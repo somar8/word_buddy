@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import DrawingPad from "@/components/DrawingPad";
 import WordCardView from "@/components/WordCardView";
 import { dueLabel, stageLabel, todayLocal } from "@/lib/schedule";
 import { supabase } from "@/lib/supabase";
@@ -15,6 +16,8 @@ export default function WordPage() {
   const [word, setWord] = useState<Word | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [sketch, setSketch] = useState<string | null | undefined>(undefined); // undefined = pad closed
+  const [sketchMessage, setSketchMessage] = useState<string | null>(null);
 
   useEffect(() => {
     supabase()
@@ -38,6 +41,17 @@ export default function WordPage() {
     }
   }
 
+  async function saveDrawing() {
+    if (!word || sketch === undefined) return;
+    const { error: e } = await supabase().from("words").update({ drawing: sketch }).eq("id", word.id);
+    if (e) setSketchMessage(e.message);
+    else {
+      setWord({ ...word, drawing: sketch });
+      setSketch(undefined);
+      setSketchMessage(sketch ? "Drawing saved." : "Drawing removed.");
+    }
+  }
+
   async function remove() {
     if (!word || !window.confirm(`Delete "${word.word}" and its review history? This cannot be undone.`)) return;
     const { error: e } = await supabase().from("words").delete().eq("id", word.id);
@@ -58,7 +72,34 @@ export default function WordPage() {
 
       {word && (
         <>
-          <WordCardView card={word} note={word.note} />
+          <WordCardView card={word} note={word.note} level={word.level} />
+
+          <section aria-labelledby="drawing-title" className="panel flex flex-col gap-3 p-5">
+            <h2 id="drawing-title" className="label">Mijn tekening</h2>
+            {sketch !== undefined ? (
+              <>
+                <DrawingPad initial={word.drawing} onChange={setSketch} />
+                <div className="flex gap-2">
+                  <button type="button" className="btn-primary flex-1" onClick={saveDrawing}>Save drawing</button>
+                  <button type="button" className="btn-secondary" onClick={() => setSketch(undefined)}>Cancel</button>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center gap-3">
+                {word.drawing ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- a data URL from the database
+                  <img src={word.drawing} alt={`Your drawing for ${word.word}`}
+                    className="aspect-square w-32 rounded-xl border border-hairline bg-white" />
+                ) : (
+                  <p className="flex-1 text-[15px] text-soft">Draw something that reminds you of this word.</p>
+                )}
+                <button type="button" className="btn-secondary" onClick={() => { setSketch(word.drawing); setSketchMessage(null); }}>
+                  {word.drawing ? "Edit drawing" : "Draw it"}
+                </button>
+              </div>
+            )}
+            {sketchMessage && <p role="status" className="text-sm text-good-ink">{sketchMessage}</p>}
+          </section>
 
           <section aria-label="Review plan" className="panel flex flex-col gap-3 p-5">
             <div className="flex items-center justify-between">

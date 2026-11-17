@@ -1,4 +1,4 @@
-import { LEVEL } from "@/lib/config";
+import { LEVEL_INFO } from "@/lib/levels";
 import { generateJson } from "@/lib/server/gemini";
 import { handle, HttpError, readJson, requireUser } from "@/lib/server/http";
 import type { AiTask, Word } from "@/lib/types";
@@ -32,7 +32,7 @@ type Item = AiTask & { id: string };
  */
 export async function POST(req: Request) {
   return handle(async () => {
-    const { supabase } = await requireUser(req);
+    const { supabase, level } = await requireUser(req);
     const { ids, today } = await readJson<{ ids?: string[]; today?: string }>(req);
     if (!Array.isArray(ids) || ids.length === 0) return { tasks: {} };
     if (!today || !/^\d{4}-\d{2}-\d{2}$/.test(today)) throw new HttpError(400, "Invalid date.");
@@ -66,8 +66,8 @@ export async function POST(req: Request) {
       related_words: w.related.map((r) => r.word),
     }));
 
-    const prompt = `You are a Dutch teacher making fill-in-the-gap exercises for an adult at CEFR level ${LEVEL}.
-For EACH word below write one NEW natural everyday Dutch sentence (not one of avoid_sentences) at ${LEVEL} level.
+    const prompt = `You are a Dutch teacher making fill-in-the-gap exercises for an adult at CEFR level ${level}: ${LEVEL_INFO[level].prompt}
+For EACH word below write one NEW natural Dutch sentence (not one of avoid_sentences) at ${level} level.
 - sentence: the sentence with the target word replaced by exactly one "___" (three underscores). Leave any article ("de"/"het") in the sentence, outside the gap.
 - answer: the exact word form that fills the gap (it may be inflected, e.g. plural or past tense).
 - en: English translation of the full sentence.

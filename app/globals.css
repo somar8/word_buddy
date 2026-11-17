@@ -31,78 +31,88 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-muted);
+/* In a layer, so Tailwind utilities (pl-10, h-12, rounded-xl…) can override these. */
+@layer components {
+  .label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-muted);
+  }
+
+  .field {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--color-line);
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 14px;
+    font-size: 16px;
+    color: var(--color-ink);
+  }
+
+  .field:focus {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 1px;
+    border-color: var(--color-accent);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 52px;
+    border-radius: 14px;
+    background: var(--color-accent);
+    color: #fff;
+    font-weight: 600;
+    font-size: 16px;
+    padding: 0 18px;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.55;
+  }
+
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 48px;
+    border-radius: 14px;
+    border: 1px solid var(--color-line);
+    background: #fff;
+    color: var(--color-ink);
+    font-weight: 500;
+    font-size: 15px;
+    padding: 0 16px;
+  }
+
+  .btn-small {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 36px;
+    border-radius: 10px;
+    border: 1px solid var(--color-line);
+    background: #fff;
+    color: var(--color-accent);
+    font-weight: 500;
+    font-size: 13px;
+    padding: 0 12px;
+  }
+
+  .panel {
+    background: #fff;
+    border-radius: 16px;
+    box-shadow: 0 1px 2px rgba(22, 24, 29, 0.06);
+  }
 }
 
-.field {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid var(--color-line);
-  border-radius: 12px;
-  background: #fff;
-  padding: 10px 14px;
-  font-size: 16px;
-  color: var(--color-ink);
-}
-
-.field:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 1px;
-  border-color: var(--color-accent);
-}
-
-.btn-primary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 52px;
-  border-radius: 14px;
-  background: var(--color-accent);
-  color: #fff;
-  font-weight: 600;
-  font-size: 16px;
-  padding: 0 18px;
-}
-
-.btn-primary:disabled {
-  opacity: 0.55;
-}
-
-.btn-secondary {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 48px;
-  border-radius: 14px;
-  border: 1px solid var(--color-line);
-  background: #fff;
-  color: var(--color-ink);
-  font-weight: 500;
-  font-size: 15px;
-  padding: 0 16px;
-}
-
-.btn-small {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 36px;
-  border-radius: 10px;
-  border: 1px solid var(--color-line);
-  background: #fff;
-  color: var(--color-accent);
-  font-weight: 500;
-  font-size: 13px;
-  padding: 0 12px;
-}
-
-.panel {
-  background: #fff;
-  border-radius: 16px;
-  box-shadow: 0 1px 2px rgba(22, 24, 29, 0.06);
+@layer components {
+  .btn-small:disabled,
+  .btn-secondary:disabled {
+    opacity: 0.45;
+  }
 }

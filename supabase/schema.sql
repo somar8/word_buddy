@@ -16,6 +16,8 @@ create table if not exists public.words (
   examples jsonb not null default '[]'::jsonb,   -- [{ "nl": "...", "en": "..." }]
   related jsonb not null default '[]'::jsonb,    -- [{ "word": "...", "relation": "...", "en": "..." }]
   note text not null default '',
+  level text not null default 'B1' check (level in ('A1', 'A2', 'B1', 'B2', 'C1', 'C2')), -- level the card was made for
+  drawing text check (drawing is null or length(drawing) < 600000), -- your own sketch, as a PNG data URL
   stage int not null default 1 check (stage between 1 and 7), -- 1..6 = next review number, 7 = learned
   due_on date not null,
   added_on date not null,
@@ -23,6 +25,12 @@ create table if not exists public.words (
   review_task_on date,        -- the day review_task was made for
   created_at timestamptz not null default now()
 );
+
+-- For projects created before levels and drawings existed (safe to run again).
+alter table public.words add column if not exists level text not null default 'B1'
+  check (level in ('A1', 'A2', 'B1', 'B2', 'C1', 'C2'));
+alter table public.words add column if not exists drawing text
+  check (drawing is null or length(drawing) < 600000);
 
 create unique index if not exists words_user_word_unique on public.words (user_id, lower(word));
 create index if not exists words_user_due on public.words (user_id, due_on);
@@ -49,6 +57,9 @@ create table if not exists public.push_subscriptions (
   auth text not null,
   created_at timestamptz not null default now()
 );
+
+-- Each user's level (A1-C2) is stored in Supabase Auth user metadata ("level"),
+-- chosen at sign-up and changeable in Settings, so it needs no table.
 
 -- Row level security: every user only sees their own rows.
 alter table public.words enable row level security;
