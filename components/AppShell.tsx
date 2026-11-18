@@ -1,11 +1,14 @@
 "use client";
 
 import type { Session } from "@supabase/supabase-js";
+import { usePathname } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
-import { toLevel, type Level } from "@/lib/levels";
+import { defaultSupport, type Lang, type SupportLang } from "@/lib/languages";
+import type { Level } from "@/lib/levels";
+import { metaFor, prefsFrom, withLanguage, withSupport, type Prefs } from "@/lib/prefs";
 import { supabase } from "@/lib/supabase";
 import BottomNav from "./BottomNav";
-import LevelPicker from "./LevelPicker";
+import LevelPicker, { LanguagePicker, SupportSelect } from "./LevelPicker";
 import Login from "./Login";
 
 const SessionContext = createContext<Session | null>(null);
@@ -17,18 +20,34 @@ export function useSession(): Session {
   return session;
 }
 
-/** The signed-in user's level (A1-C2). The shell asks for it before any page shows. */
-export function useLevel(): Level {
-  return toLevel(useSession().user.user_metadata?.level) ?? "B1";
+/** The signed-in user's preferences (language, level, translation…). */
+export function usePrefs(): Prefs & { level: Level } {
+  const prefs = prefsFrom(useSession().user.user_metadata);
+  return { ...prefs, level: prefs.level ?? "B1" };
 }
 
-/** Saves a new level in the user's account; the session (and every page) updates with it. */
-export async function saveLevel(level: Level): Promise<string | null> {
-  const { error } = await supabase().auth.updateUser({ data: { level } });
+/** The level for the language being learned. The shell asks for it before any page shows. */
+export function useLevel(): Level {
+  return usePrefs().level;
+}
+
+/** Saves preferences in the user's account; the session (and every page) updates with them. */
+export async function savePrefs(change: Partial<Omit<Prefs, "level">>): Promise<string | null> {
+  const client = supabase();
+  const { data } = await client.auth.getSession();
+  let next = { ...prefsFrom(data.session?.user.user_metadata), ...change };
+  // A new learning language brings its own translation language, unless one is given.
+  if (change.language) next = change.support ? withSupport(withLanguage(next, change.language), change.support) : withLanguage(next, change.language);
+  else if (change.support) next = withSupport(next, change.support);
+  const { error } = await client.auth.updateUser({ data: metaFor(next) });
   return error ? error.message : null;
 }
 
+/** Pages that work without signing in (they handle the sign-in themselves). */
+const PUBLIC_PATHS = ["/auth/"];
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const path = usePathname();
   const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
@@ -46,11 +65,12 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => data.subscription.unsubscribe();
   }, []);
 
+  if (PUBLIC_PATHS.some((p) => path.startsWith(p))) return <>{children}</>;
   if (session === undefined) {
     return <div className="min-h-dvh" aria-busy="true" />;
   }
   if (!session) return <Login />;
-  if (!toLevel(session.user.user_metadata?.level)) return <ChooseLevel />;
+  if (!prefsFrom(session.user.user_metadata).level) return <ChooseLevel session={session} />;
 
   return (
     <SessionContext.Provider value={session}>
@@ -62,29 +82,35 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Shown once to accounts that have no level yet (for example, made before levels existed). */
-function ChooseLevel() {
-  const [level, setLevel] = useState<Level | null>(null);
+/** Shown when the account has no level for its language yet (new language, or an older account). */
+function ChooseLevel({ session }: { session: Session }) {
+  const prefs = prefsFrom(session.user.user_metadata);
+  const [language, setLanguage] = useState<Lang>(prefs.language);
+  const [level, setLevel] = useState<Level | null>(prefs.levels[prefs.language] ?? null);
+  const [support, setSupport] = useState<SupportLang>(prefs.support);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function save() {
     if (!level) return;
     setBusy(true);
-    const message = await saveLevel(level);
+    const message = await savePrefs({ language, support, levels: { ...prefs.levels, [language]: level } });
     setBusy(false);
     if (message) setError(message);
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex min-h-dvh max-w-md flex-col justify-center gap-6 px-6 py-10">
       <div className="flex flex-col gap-2">
-        <h1 className="font-display text-3xl font-bold">Choose your level</h1>
+        <h1 className="font-display text-3xl font-bold">Set up Word Buddy</h1>
         <p className="text-soft">
-          Word Buddy writes every meaning, example and exercise for this level. You can change it later in Settings.
+          Every meaning, example and exercise is written for your level. You can change both later in Settings.
         </p>
       </div>
+      <LanguagePicker value={language}
+        onChange={(l) => { setLanguage(l); setLevel(prefs.levels[l] ?? null); setSupport(prefs.supports[l] ?? defaultSupport(l)); }} />
       <LevelPicker value={level} onChange={setLevel} />
+      <SupportSelect language={language} value={support} onChange={setSupport} id="setup-support" />
       {error && <p role="alert" className="text-sm text-due-ink">{error}</p>}
       <button type="button" className="btn-primary" disabled={!level || busy} onClick={save}>
         {busy ? "Saving…" : "Continue"}

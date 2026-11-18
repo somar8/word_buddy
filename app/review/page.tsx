@@ -2,10 +2,14 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { usePrefs } from "@/components/AppShell";
 import PageHeader from "@/components/PageHeader";
 import SpeakButton from "@/components/SpeakButton";
 import WordCardView from "@/components/WordCardView";
 import { MAX_REVIEWS_PER_DAY } from "@/lib/config";
+import { LANG_INFO } from "@/lib/languages";
+import { supportLabel } from "@/lib/prefs";
+import { blankOut, cachedTask, expressionGap, keyPart } from "@/lib/practice";
 import {
   fullWord,
   needsAiTask,
@@ -28,10 +32,14 @@ const TASK_NAMES: Record<TaskType, string> = {
   gap: "Fill the gap",
   choose: "Choose the right word",
   write: "Write your own sentence",
+  complete: "Complete the expression",
 };
 
 export default function ReviewPage() {
   const [today] = useState(todayLocal);
+  const prefs = usePrefs();
+  const lang = prefs.language;
+  const t = LANG_INFO[lang].labels;
   const [phase, setPhase] = useState<Phase>("loading");
   const [items, setItems] = useState<Item[]>([]);
   const [index, setIndex] = useState(0);
@@ -49,6 +57,7 @@ export default function ReviewPage() {
       const { data, error } = await supabase()
         .from("words")
         .select("*")
+        .eq("language", lang)
         .lte("due_on", today)
         .order("due_on")
         .order("added_on")
@@ -64,11 +73,17 @@ export default function ReviewPage() {
         setPhase("empty");
         return;
       }
-      let list: Item[] = words.map((w) => ({
-        word: w,
-        task: taskFor(w, today),
-        ai: w.review_task_on === today ? w.review_task : null,
-      }));
+      let list: Item[] = words.map((w) => {
+        const task = taskFor(w, today);
+        if (task === "complete") {
+          // Hide the key part of the expression itself; no AI needed.
+          const b = blankOut(w.word, keyPart(w.word, w.key_word));
+          return b
+            ? { word: w, task, ai: { ...b, en: w.meaning_en, distractors: [] } }
+            : { word: w, task: "meaning" as TaskType, ai: null };
+        }
+        return { word: w, task, ai: cachedTask(w, today) };
+      });
 
       // One AI call makes today's fresh sentences for every gap / choice exercise.
       const missing = list.filter((it) => needsAiTask(it.task) && !it.ai).map((it) => it.word.id);
@@ -80,12 +95,15 @@ export default function ReviewPage() {
           setMessage(`${(err as Error).message} Using typing exercises instead.`);
         }
       }
-      // Without a sentence, fall back to typing the word.
-      list = list.map((it) =>
-        needsAiTask(it.task) && (!it.ai || (it.task === "choose" && it.ai.distractors.length === 0))
-          ? { ...it, task: "type" }
-          : it,
-      );
+      // Without an AI sentence, fall back: words to typing the word, expressions to a gap from their own examples.
+      list = list.map((it): Item => {
+        if (!needsAiTask(it.task) || (it.ai && (it.task !== "choose" || it.ai.distractors.length > 0))) return it;
+        if (it.word.kind !== "word") {
+          const gap = expressionGap(it.word);
+          return gap ? { ...it, task: "gap", ai: gap } : { ...it, task: "meaning", ai: null };
+        }
+        return { ...it, task: "type" };
+      });
       if (!alive) return;
       setItems(list);
       setPhase("question");
@@ -94,7 +112,7 @@ export default function ReviewPage() {
     return () => {
       alive = false;
     };
-  }, [today]);
+  }, [today, lang]);
 
   const item = items[index];
 
@@ -130,16 +148,16 @@ export default function ReviewPage() {
     const given = normalize(answer);
     const target = fullWord(w);
     if (item.task === "type") {
-      if (given === normalize(target)) return grade(true, `Goed! ${target}`);
+      if (given === normalize(target)) return grade(true, `${t.good} ${target}`);
       if (w.article && given === normalize(w.word)) {
         return grade(false, `Bijna! It's ${target}`, `Remember the article: ${w.article}.`);
       }
       return grade(false, `The answer: ${target}`);
     }
-    // gap
+    // gap or complete
     const ok = [item.ai?.answer ?? "", w.word].some((a) => a && given === normalize(a));
     return ok
-      ? grade(true, `Goed! ${item.ai?.answer ?? w.word}`, item.ai?.en)
+      ? grade(true, `${t.good} ${item.ai?.answer ?? w.word}`, item.ai?.en)
       : grade(false, `The answer: ${item.ai?.answer ?? w.word}`, item.ai?.en);
   }
 
@@ -155,7 +173,7 @@ export default function ReviewPage() {
       const detail = [check.feedback_nl, check.corrected !== answer.trim() ? `Correct: ${check.corrected}` : ""]
         .filter(Boolean)
         .join("\n");
-      await grade(check.correct, check.correct ? "Goed gedaan!" : "Not quite", detail);
+      await grade(check.correct, check.correct ? t.wellDone : "Not quite", detail);
     } catch (err) {
       setMessage((err as Error).message);
     } finally {
@@ -179,7 +197,7 @@ export default function ReviewPage() {
         <main className="flex flex-col gap-4 px-5 pt-6">
           {phase === "done" && (
             <>
-              <h1 className="font-display text-[28px] font-bold">Klaar voor vandaag!</h1>
+              <h1 className="font-display text-[28px] font-bold">{t.doneToday}</h1>
               <p className="text-soft">
                 {score.right} right, {score.wrong} to practise again. Words you missed come back tomorrow.
               </p>
@@ -228,7 +246,7 @@ export default function ReviewPage() {
         <section aria-label="Question" className="panel flex flex-col gap-4 px-5 py-6">
           {item.task === "meaning" && (
             <div className="flex items-center justify-between gap-3">
-              <span lang="nl" className="font-display text-3xl font-bold">{fullWord(w)}</span>
+              <span lang={lang} className="font-display text-3xl font-bold">{fullWord(w)}</span>
               <SpeakButton text={fullWord(w)} />
             </div>
           )}
@@ -236,16 +254,16 @@ export default function ReviewPage() {
             <>
               {item.task === "write" && (
                 <p className="text-[15px] text-soft">
-                  Use <strong lang="nl" className="text-ink">{fullWord(w)}</strong> in your own Dutch sentence.
+                  Use <strong lang={lang} className="text-ink">{fullWord(w)}</strong> in your own {LANG_INFO[lang].name} sentence.
                 </p>
               )}
-              <p lang="nl" className="font-display text-xl font-medium leading-snug">{w.meaning_nl}</p>
-              {item.task === "type" && <Hint key={w.id} text={w.meaning_en} label="Show English" />}
+              <p lang={lang} className="font-display text-xl font-medium leading-snug">{w.meaning_nl}</p>
+              {item.task === "type" && <Hint key={w.id} text={w.meaning_en} label={`Show ${supportLabel(w.translation_lang)}`} />}
             </>
           )}
-          {(item.task === "gap" || item.task === "choose") && item.ai && (
+          {(item.task === "gap" || item.task === "choose" || item.task === "complete") && item.ai && (
             <>
-              <p lang="nl" className="font-display text-[22px] font-medium leading-normal">
+              <p lang={lang} className="font-display text-[22px] font-medium leading-normal">
                 {before}
                 <span className="inline-block min-w-24 border-b-2 border-ink align-baseline">
                   {phase === "feedback" ? item.ai.answer : " "}
@@ -254,7 +272,7 @@ export default function ReviewPage() {
               </p>
               <div className="flex flex-col gap-1 border-t border-hairline pt-3.5">
                 <span className="label">Hint</span>
-                <p lang="nl" className="text-[15px] leading-snug text-[#2c303a]">{w.meaning_nl}</p>
+                <p lang={lang} className="text-[15px] leading-snug text-[#2c303a]">{w.meaning_nl}</p>
               </div>
             </>
           )}
@@ -265,10 +283,10 @@ export default function ReviewPage() {
           revealed ? (
             <div className="flex flex-col gap-3">
               <div className="panel flex flex-col gap-1 p-4">
-                <p lang="nl" className="text-base">{w.meaning_nl}</p>
+                <p lang={lang} className="text-base">{w.meaning_nl}</p>
                 <p className="text-[15px] text-soft">{w.meaning_en}</p>
               </div>
-              <button type="button" className="btn-primary" onClick={() => grade(true, "Goed!")}>I knew it</button>
+              <button type="button" className="btn-primary" onClick={() => grade(true, t.good)}>I knew it</button>
               <button type="button" className="btn-secondary" onClick={() => grade(false, `${fullWord(w)}: ${w.meaning_en}`)}>
                 I didn&apos;t know it
               </button>
@@ -278,17 +296,17 @@ export default function ReviewPage() {
           )
         )}
 
-        {phase === "question" && (item.task === "type" || item.task === "gap") && (
+        {phase === "question" && (item.task === "type" || item.task === "gap" || item.task === "complete") && (
           <form onSubmit={checkTyped} className="flex flex-col gap-3">
             <label htmlFor="answer" className="text-[13px] font-semibold text-soft">
-              {item.task === "type" && w.article ? "Your answer (with de or het)" : "Your answer"}
+              {item.task === "type" && w.article ? `Your answer (with ${LANG_INFO[lang].articles.join(", ")})` : "Your answer"}
             </label>
-            <input id="answer" lang="nl" autoFocus autoComplete="off" autoCapitalize="none" spellCheck={false}
+            <input id="answer" lang={lang} autoFocus autoComplete="off" autoCapitalize="none" spellCheck={false}
               value={answer} onChange={(e) => setAnswer(e.target.value)}
               className="field h-[52px] text-lg font-medium" />
             <button type="submit" className="btn-primary" disabled={!answer.trim()}>Check</button>
             <button type="button" className="btn-secondary"
-              onClick={() => grade(false, `The answer: ${item.task === "gap" ? item.ai?.answer : fullWord(w)}`, item.task === "gap" ? item.ai?.en : undefined)}>
+              onClick={() => grade(false, `The answer: ${item.task !== "type" ? item.ai?.answer : fullWord(w)}`, item.task === "gap" ? item.ai?.en : undefined)}>
               I don&apos;t know
             </button>
           </form>
@@ -297,10 +315,10 @@ export default function ReviewPage() {
         {phase === "question" && item.task === "choose" && (
           <div role="group" aria-label="Options" className="flex flex-col gap-2.5">
             {options.map((opt) => (
-              <button key={opt} type="button" lang="nl" className="btn-secondary h-[52px] text-[17px]"
+              <button key={opt} type="button" lang={lang} className="btn-secondary h-[52px] text-[17px]"
                 onClick={() =>
                   opt === item.ai?.answer
-                    ? grade(true, `Goed! ${opt}`, item.ai?.en)
+                    ? grade(true, `${t.good} ${opt}`, item.ai?.en)
                     : grade(false, `The answer: ${item.ai?.answer}`, item.ai?.en)
                 }>
                 {opt}
@@ -312,7 +330,7 @@ export default function ReviewPage() {
         {phase === "question" && item.task === "write" && (
           <form onSubmit={checkSentence} className="flex flex-col gap-3">
             <label htmlFor="sentence" className="text-[13px] font-semibold text-soft">Your sentence</label>
-            <textarea id="sentence" lang="nl" rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)}
+            <textarea id="sentence" lang={lang} rows={3} value={answer} onChange={(e) => setAnswer(e.target.value)}
               className="field resize-none text-[17px]" />
             <button type="submit" className="btn-primary" disabled={!answer.trim() || checking}>
               {checking ? "Checking…" : "Check"}
@@ -329,7 +347,7 @@ export default function ReviewPage() {
           <div className="flex flex-col gap-3">
             <div role="status"
               className={`flex flex-col gap-1 rounded-2xl px-4 py-3.5 ${feedback.correct ? "bg-good-soft text-good-ink" : "bg-due-soft text-due-ink"}`}>
-              <span lang="nl" className="text-base font-semibold">{feedback.title}</span>
+              <span lang={lang} className="text-base font-semibold">{feedback.title}</span>
               {feedback.detail && <span className="whitespace-pre-line text-sm">{feedback.detail}</span>}
               <span className="text-sm">
                 {feedback.correct
@@ -338,7 +356,7 @@ export default function ReviewPage() {
               </span>
             </div>
             {showCard ? (
-              <WordCardView card={w} note={w.note} drawing={w.drawing} />
+              <WordCardView card={w} note={w.note} drawing={w.drawing} language={w.language} translation={w.translation_lang} />
             ) : (
               <button type="button" className="btn-small self-start" onClick={() => setShowCard(true)}>Show card</button>
             )}

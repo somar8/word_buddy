@@ -55,8 +55,8 @@ export function reminderText(due: number): PushMessage {
     title: "Word Buddy",
     body:
       due === 1
-        ? "1 woord wacht op je. Tijd voor je herhaling!"
-        : `${due} woorden wachten op je. Tijd voor je herhaling!`,
+        ? "1 word is waiting for you. Time for your review!"
+        : `${due} words are waiting for you. Time for your review!`,
     url: "/review",
   };
 }

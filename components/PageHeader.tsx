@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useLevel } from "./AppShell";
+import { LANG_INFO } from "@/lib/languages";
+import { usePrefs } from "./AppShell";
 
 export default function PageHeader({ title, right }: { title?: string; right?: React.ReactNode }) {
-  const level = useLevel();
+  const { level, language } = usePrefs();
+  const info = LANG_INFO[language];
   return (
     <header className="flex items-center justify-between px-5 pb-2 pt-[calc(20px+env(safe-area-inset-top))]">
       <span className="font-display text-lg font-bold">{title ?? "Word Buddy"}</span>
       <div className="flex items-center gap-2">
         {right}
-        <Link href="/settings#level" aria-label={`Dutch, level ${level}. Change level`}
-          className="rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent-dark">Dutch · {level}</Link>
+        <Link href="/settings#preferences" aria-label={`Learning ${info.name}, level ${level}. Change`}
+          className="flex items-center gap-1 rounded-full bg-accent-soft px-2.5 py-1 text-xs font-semibold text-accent-dark">
+          <span aria-hidden="true">{info.flag}</span>{info.name} · {level}
+        </Link>
         <Link href="/settings" aria-label="Settings"
           className="flex h-11 w-11 items-center justify-center rounded-full text-soft">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"

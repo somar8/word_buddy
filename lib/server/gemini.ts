@@ -6,7 +6,9 @@ let client: GoogleGenAI | null = null;
 
 function gemini(): GoogleGenAI {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new HttpError(500, "Server is missing GEMINI_API_KEY. See README.");
+  if (!apiKey) {
+    throw new HttpError(500, "The server is not set up yet: GEMINI_API_KEY is missing. See the README.", "setup");
+  }
   client ??= new GoogleGenAI({ apiKey });
   return client;
 }
@@ -24,6 +26,7 @@ export async function generateJson<T>(
       responseMimeType: "application/json",
       responseJsonSchema: schema,
       temperature,
+      httpOptions: { timeout: 30_000 },
     },
   });
   const text = res.text;

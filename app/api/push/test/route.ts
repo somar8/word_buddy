@@ -11,7 +11,7 @@ export async function POST(req: Request) {
     if (error) throw error;
     const sent = await sendPush(supabase, data ?? [], {
       title: "Word Buddy",
-      body: "Het werkt! Je krijgt elke ochtend een herinnering.",
+      body: "It works! You'll get a reminder every morning.",
       url: "/review",
     });
     return { sent };

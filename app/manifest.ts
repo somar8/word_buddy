@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Word Buddy",
     short_name: "Word Buddy",
-    description: "Remember every new Dutch word.",
+    description: "Remember every new word in Dutch, German or English.",
     start_url: "/add",
     display: "standalone",
     background_color: "#f5f6f8",

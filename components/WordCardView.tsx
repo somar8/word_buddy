@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { englishFirst } from "@/lib/levels";
-import type { Card } from "@/lib/types";
-import { useLevel } from "./AppShell";
+import { LANG_INFO, toLang } from "@/lib/languages";
+import { supportLabel, supportName, translationFirst } from "@/lib/prefs";
+import { KIND_LABEL, type Card, type Kind } from "@/lib/types";
+import { usePrefs } from "./AppShell";
 import SpeakButton from "./SpeakButton";
 
 /** Highlights the target word (or its first 4 letters, to catch inflected forms) in a sentence. */
@@ -25,24 +26,35 @@ export function Highlight({ text, word }: { text: string; word: string }) {
 }
 
 /** Read-only word card: used in the word list and after a review answer. */
-export default function WordCardView({ card, note, drawing, level }: {
-  card: Omit<Card, "found">;
+export default function WordCardView({ card, note, drawing, level, language, translation }: {
+  card: Omit<Card, "found"> & { kind?: Kind; literal?: string; usage?: string };
   note?: string;
   drawing?: string | null;
   level?: string;
+  language?: string;
+  translation?: string; // the card's translation language; defaults to the current setting
 }) {
-  const [english, setEnglish] = useState(englishFirst(useLevel()));
+  const prefs = usePrefs();
+  const lang = toLang(language) ?? prefs.language;
+  const t = LANG_INFO[lang].labels;
+  const [english, setEnglish] = useState(translationFirst(prefs));
   const full = card.article ? `${card.article} ${card.word}` : card.word;
 
   return (
-    <section aria-label="Word card" className="panel flex flex-col gap-4 p-5">
+    <section aria-label={card.kind && card.kind !== "word" ? "Expression card" : "Word card"} className="panel flex flex-col gap-4 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <span lang="nl" className="font-display text-3xl font-bold break-words">
+          {card.kind && card.kind !== "word" && (
+            <span className="mb-1 self-start rounded-full bg-accent-soft px-2.5 py-0.5 text-xs font-semibold text-accent-dark">
+              {KIND_LABEL[card.kind]}
+            </span>
+          )}
+          <span lang={lang}
+            className={`font-display font-bold break-words ${card.kind && card.kind !== "word" ? "text-2xl leading-tight" : "text-3xl"}`}>
             {card.article && <span className="font-medium text-muted">{card.article} </span>}
             {card.word}
           </span>
-          <span lang="nl" className="text-[13px] text-muted">
+          <span lang={lang} className="text-[13px] text-muted">
             {[card.part_of_speech, card.forms].filter(Boolean).join(" · ")}
           </span>
           {level && <span className="text-xs text-muted">Card written for level {level}</span>}
@@ -51,24 +63,34 @@ export default function WordCardView({ card, note, drawing, level }: {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="label">Betekenis</span>
-        <p lang="nl" className="text-base leading-snug">{card.meaning_nl}</p>
+        <span className="label">{t.meaning}</span>
+        <p lang={lang} className="text-base leading-snug">{card.meaning_nl}</p>
+        {card.literal && english && (
+          <p className="text-[13px] text-muted"><span className="font-semibold">Literally:</span> <i>{card.literal}</i></p>
+        )}
         {english ? (
           <p className="text-[15px] text-soft">{card.meaning_en}</p>
         ) : (
           <button type="button" className="btn-small self-start" onClick={() => setEnglish(true)}>
-            Show English
+            Show {translation ? supportLabel(translation) : supportName(prefs)}
           </button>
         )}
       </div>
 
+      {card.usage && (
+        <div className="flex flex-col gap-1 rounded-xl bg-ground px-3.5 py-2.5">
+          <span className="label">When to use it</span>
+          <p className="text-[15px] leading-snug">{card.usage}</p>
+        </div>
+      )}
+
       {card.examples.length > 0 && (
         <div className="flex flex-col gap-2.5">
-          <span className="label">Voorbeelden</span>
+          <span className="label">{t.examples}</span>
           {card.examples.map((ex, i) => (
             <div key={i} className="flex items-start gap-2">
               <div className="flex-1">
-                <p lang="nl" className="text-[15px] leading-normal"><Highlight text={ex.nl} word={card.word} /></p>
+                <p lang={lang} className="text-[15px] leading-normal"><Highlight text={ex.nl} word={card.word} /></p>
                 {english && <p className="text-[13px] text-muted">{ex.en}</p>}
               </div>
               <SpeakButton text={ex.nl} label="Play sentence" small />
@@ -79,8 +101,8 @@ export default function WordCardView({ card, note, drawing, level }: {
 
       {card.related.length > 0 && (
         <div className="flex flex-col gap-2">
-          <span className="label">Verwante woorden</span>
-          <ul lang="nl" className="flex flex-wrap gap-2">
+          <span className="label">{t.related}</span>
+          <ul lang={lang} className="flex flex-wrap gap-2">
             {card.related.map((r, i) => (
               <li key={i} className="rounded-full bg-[#f0f1f4] px-3 py-1.5 text-sm">
                 {r.word}
@@ -93,7 +115,7 @@ export default function WordCardView({ card, note, drawing, level }: {
 
       {drawing && (
         <div className="flex flex-col gap-1.5">
-          <span className="label">Mijn tekening</span>
+          <span className="label">{t.drawing}</span>
           {/* eslint-disable-next-line @next/next/no-img-element -- a data URL from the database */}
           <img src={drawing} alt={`Your drawing for ${card.word}`}
             className="aspect-square w-40 rounded-xl border border-hairline bg-white" />
@@ -102,7 +124,7 @@ export default function WordCardView({ card, note, drawing, level }: {
 
       {note && (
         <div className="flex flex-col gap-1">
-          <span className="label">Mijn notitie</span>
+          <span className="label">{t.note}</span>
           <p className="text-[15px] whitespace-pre-line">{note}</p>
         </div>
       )}

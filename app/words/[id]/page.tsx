@@ -3,11 +3,19 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { usePrefs } from "@/components/AppShell";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import DrawingPad from "@/components/DrawingPad";
+import SentenceEditor from "@/components/SentenceEditor";
 import WordCardView from "@/components/WordCardView";
 import { dueLabel, stageLabel, todayLocal } from "@/lib/schedule";
-import { supabase } from "@/lib/supabase";
-import type { Word } from "@/lib/types";
+import { defaultSupport, toLang } from "@/lib/languages";
+import { supportLabel } from "@/lib/prefs";
+import { api, supabase } from "@/lib/supabase";
+import { keyPart } from "@/lib/practice";
+import { KIND_LABEL, type Kind, type Word } from "@/lib/types";
+
+const ALL_KINDS: Kind[] = ["word", "phrase", "idiom", "saying", "sentence"];
 
 export default function WordPage() {
   const { id } = useParams<{ id: string }>();
@@ -16,6 +24,12 @@ export default function WordPage() {
   const [word, setWord] = useState<Word | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState<string | null>(null);
+  const [kindMessage, setKindMessage] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const prefs = usePrefs();
+  const [translating, setTranslating] = useState(false);
+  const [translateMessage, setTranslateMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const [version, setVersion] = useState(0); // bump to reload the card after re-translating
   const [sketch, setSketch] = useState<string | null | undefined>(undefined); // undefined = pad closed
   const [sketchMessage, setSketchMessage] = useState<string | null>(null);
 
@@ -29,7 +43,40 @@ export default function WordPage() {
         if (e) setError("Word not found.");
         else setWord(data as Word);
       });
-  }, [id]);
+  }, [id, version]);
+
+  /** Moves the item between the Words and Expressions lists (or changes the kind of expression). */
+  async function changeKind(kind: Kind) {
+    if (!word || kind === word.kind) return;
+    const key_word = kind === "word" ? "" : keyPart(word.word, word.key_word ?? "");
+    const { error: e } = await supabase().from("words").update({ kind, key_word }).eq("id", word.id);
+    if (e) setKindMessage(`Could not change it: ${e.message}`);
+    else {
+      const moved = (word.kind === "word") !== (kind === "word");
+      setWord({ ...word, kind, key_word });
+      setKindMessage(moved ? `Moved to ${kind === "word" ? "Words" : "Expressions"} in My list.` : `Now marked as ${KIND_LABEL[kind].toLowerCase()}.`);
+    }
+  }
+
+  /** Rewrites this card's translations in the language chosen for its learning language. */
+  async function retranslate() {
+    if (!word) return;
+    setTranslating(true);
+    setTranslateMessage(null);
+    try {
+      const res = await api<{ updated: number; translation: string }>("/api/retranslate", { ids: [word.id] });
+      if (res.updated === 1) {
+        setTranslateMessage({ ok: true, text: `Translations are now in ${supportLabel(res.translation)}.` });
+        setVersion((v) => v + 1);
+      } else {
+        setTranslateMessage({ ok: false, text: "The AI answer didn't match this card, so nothing changed. Try again." });
+      }
+    } catch (err) {
+      setTranslateMessage({ ok: false, text: (err as Error).message });
+    } finally {
+      setTranslating(false);
+    }
+  }
 
   async function pinDate(date: string) {
     if (!word || !date) return;
@@ -52,19 +99,21 @@ export default function WordPage() {
     }
   }
 
-  async function remove() {
-    if (!word || !window.confirm(`Delete "${word.word}" and its review history? This cannot be undone.`)) return;
+  async function remove(): Promise<string | null> {
+    if (!word) return null;
     const { error: e } = await supabase().from("words").delete().eq("id", word.id);
-    if (e) setError(e.message);
-    else router.replace("/words");
+    if (e) return `It was not deleted: ${e.message}`;
+    router.replace(word.kind !== "word" ? "/words#expressions" : "/words");
+    return null;
   }
 
   return (
     <main className="flex flex-col gap-4 px-5 pb-6 pt-[calc(16px+env(safe-area-inset-top))]">
-      <Link href="/words" className="flex h-11 items-center gap-1 self-start text-[15px] font-medium text-accent">
+      <Link href={word && word.kind !== "word" ? "/words#expressions" : "/words"}
+        className="flex h-11 items-center gap-1 self-start text-[15px] font-medium text-accent">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
           strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>
-        My words
+        My list
       </Link>
 
       {error && <p role="alert" className="text-due-ink">{error}</p>}
@@ -72,7 +121,9 @@ export default function WordPage() {
 
       {word && (
         <>
-          <WordCardView card={word} note={word.note} level={word.level} />
+          <WordCardView card={{ ...word, examples: [] }} note={word.note} level={word.level} language={word.language} translation={word.translation_lang} />
+
+          <SentenceEditor word={word} onChange={(examples) => setWord({ ...word, examples })} />
 
           <section aria-labelledby="drawing-title" className="panel flex flex-col gap-3 p-5">
             <h2 id="drawing-title" className="label">Mijn tekening</h2>
@@ -101,6 +152,39 @@ export default function WordPage() {
             {sketchMessage && <p role="status" className="text-sm text-good-ink">{sketchMessage}</p>}
           </section>
 
+          <section aria-labelledby="kind-title" className="panel flex flex-col gap-2 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <label id="kind-title" htmlFor="kind" className="label">Kept in</label>
+              <select id="kind" value={word.kind ?? "word"} onChange={(e) => changeKind(e.target.value as Kind)}
+                className="field h-10 w-auto py-0 text-[15px]">
+                <option value="word">Words · single word</option>
+                {ALL_KINDS.filter((k) => k !== "word").map((k) => (
+                  <option key={k} value={k}>Expressions · {KIND_LABEL[k].toLowerCase()}</option>
+                ))}
+              </select>
+            </div>
+            {kindMessage && <p role="status" className="text-sm text-good-ink">{kindMessage}</p>}
+            {(() => {
+              const lang = toLang(word.language) ?? prefs.language;
+              const wanted = prefs.supports[lang] ?? defaultSupport(lang);
+              const differs = (word.translation_lang ?? "en") !== wanted;
+              return (
+                <div className="flex items-center justify-between gap-3 border-t border-hairline pt-2.5">
+                  <span className="text-sm">
+                    <span className="text-muted">Translations in </span>
+                    <strong className={differs ? "text-due-ink" : ""}>{supportLabel(word.translation_lang)}</strong>
+                  </span>
+                  <button type="button" className="btn-small shrink-0" disabled={translating} onClick={retranslate}>
+                    {translating ? "Translating…" : differs ? `Translate into ${supportLabel(wanted)}` : "Redo translation"}
+                  </button>
+                </div>
+              );
+            })()}
+            {translateMessage && (
+              <p role="status" className={`text-sm ${translateMessage.ok ? "text-good-ink" : "text-due-ink"}`}>{translateMessage.text}</p>
+            )}
+          </section>
+
           <section aria-label="Review plan" className="panel flex flex-col gap-3 p-5">
             <div className="flex items-center justify-between">
               <span className="label">Progress</span>
@@ -120,7 +204,15 @@ export default function WordPage() {
             </div>
           </section>
 
-          <button type="button" onClick={remove} className="btn-secondary text-due-ink">Delete word</button>
+          <button type="button" onClick={() => setConfirming(true)} className="btn-secondary text-due-ink">
+            Delete {word.kind !== "word" ? "expression" : "word"}
+          </button>
+          <ConfirmDialog open={confirming} onCancel={() => setConfirming(false)} onConfirm={remove}
+            title={`Delete this ${word.kind !== "word" ? "expression" : "word"}?`} confirmLabel="Delete for good"
+            body={<>
+              <span lang={word.language} className="mb-2 block font-medium text-ink">{word.word}</span>
+              Its card, your sentences, drawing and review history are removed. This cannot be undone.
+            </>} />
         </>
       )}
     </main>

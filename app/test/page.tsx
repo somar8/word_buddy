@@ -2,9 +2,13 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { usePrefs } from "@/components/AppShell";
+import ConfirmDialog from "@/components/ConfirmDialog";
 import PageHeader from "@/components/PageHeader";
 import SpeakButton from "@/components/SpeakButton";
-import { englishOf, gapFromExamples } from "@/lib/practice";
+import { LANG_INFO } from "@/lib/languages";
+import { cachedTask, englishOf, expressionGap, gapFromExamples } from "@/lib/practice";
+import { supportLabel } from "@/lib/prefs";
 import { fullWord, normalize, stableShuffle, todayLocal } from "@/lib/schedule";
 import { api, supabase } from "@/lib/supabase";
 import type { AiTask, Word } from "@/lib/types";
@@ -13,11 +17,12 @@ const MAX_WORDS = 20;
 
 type TestWord = Pick<
   Word,
-  "id" | "word" | "article" | "meaning_en" | "examples" | "review_task" | "review_task_on" | "added_on" | "due_on"
+  "id" | "word" | "article" | "meaning_en" | "translation_lang" | "kind" | "key_word" | "examples" | "review_task" | "review_task_on" | "added_on" | "due_on"
 >;
 type Source = "added" | "due" | "recent";
 type Phase = "pick" | "match" | "write" | "results";
 type Gap = { task: AiTask | null; given: string; result: "right" | "wrong" | null };
+export type TestItem = { word_id: string; word: string; sentence: string; answer: string; given: string; correct: boolean };
 
 const SOURCE_LABEL: Record<Source, string> = {
   added: "Added today",
@@ -27,6 +32,10 @@ const SOURCE_LABEL: Record<Source, string> = {
 
 export default function TestPage() {
   const [today] = useState(todayLocal);
+  const { language } = usePrefs();
+  const [view, setView] = useState<"new" | "history">("new");
+  const [mistakes, setMistakes] = useState(0);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [all, setAll] = useState<TestWord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<Source>("added");
@@ -37,7 +46,8 @@ export default function TestPage() {
   useEffect(() => {
     supabase()
       .from("words")
-      .select("id, word, article, meaning_en, examples, review_task, review_task_on, added_on, due_on")
+      .select("id, word, article, meaning_en, translation_lang, kind, key_word, examples, review_task, review_task_on, added_on, due_on")
+      .eq("language", language)
       .or(`added_on.eq.${today},due_on.lte.${today}`)
       .order("created_at", { ascending: false })
       .limit(100)
@@ -47,7 +57,8 @@ export default function TestPage() {
         if (list.length === 0) {
           const recent = await supabase()
             .from("words")
-            .select("id, word, article, meaning_en, examples, review_task, review_task_on, added_on, due_on")
+            .select("id, word, article, meaning_en, translation_lang, kind, key_word, examples, review_task, review_task_on, added_on, due_on")
+            .eq("language", language)
             .order("created_at", { ascending: false })
             .limit(10);
           list = (recent.data ?? []) as TestWord[];
@@ -57,7 +68,7 @@ export default function TestPage() {
         }
         setAll(list);
       });
-  }, [today]);
+  }, [today, language]);
 
   const pools = useMemo(() => {
     const list = all ?? [];
@@ -67,6 +78,19 @@ export default function TestPage() {
       recent: list.slice(0, 10),
     } satisfies Record<Source, TestWord[]>;
   }, [all, today]);
+
+  async function finish(items: TestItem[]) {
+    setPhase("results");
+    const { error } = await supabase().from("tests").insert({
+      language,
+      source,
+      total: items.length,
+      right_count: items.filter((i) => i.correct).length,
+      match_mistakes: mistakes,
+      items,
+    });
+    setSaveError(error ? `This test could not be saved to My tests: ${error.message}` : null);
+  }
 
   function start() {
     setWords(pools[source].slice(0, MAX_WORDS));
@@ -78,10 +102,21 @@ export default function TestPage() {
     <>
       <PageHeader title="Today's test" />
       <main className="flex flex-col gap-4 px-5 pb-6 pt-2">
-        {error && <p role="alert" className="text-due-ink">{error}</p>}
-        {!all && !error && <p className="text-soft" aria-busy="true">Loading…</p>}
+        {(phase === "pick" || view === "history") && (
+          <div role="tablist" aria-label="Tests" className="grid grid-cols-2 rounded-xl bg-[#e9ebf0] p-1">
+            {(["new", "history"] as const).map((v) => (
+              <button key={v} type="button" role="tab" aria-selected={view === v} onClick={() => setView(v)}
+                className={`h-10 rounded-lg text-sm font-semibold ${view === v ? "bg-white text-ink shadow-sm" : "text-soft"}`}>
+                {v === "new" ? "New test" : "My tests"}
+              </button>
+            ))}
+          </div>
+        )}
+        {view === "history" && <MyTests />}
+        {view === "new" && error && <p role="alert" className="text-due-ink">{error}</p>}
+        {view === "new" && !all && !error && <p className="text-soft" aria-busy="true">Loading…</p>}
 
-        {all && phase === "pick" && (
+        {view === "new" && all && phase === "pick" && (
           all.length === 0 ? (
             <div className="panel flex flex-col gap-3 p-5">
               <h1 className="font-display text-2xl font-bold">No words to test yet</h1>
@@ -94,7 +129,7 @@ export default function TestPage() {
               <ol className="panel flex flex-col gap-3 p-5 text-[15px]">
                 <li className="flex gap-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[13px] font-bold text-accent-dark">1</span>
-                  <span><strong>Match</strong> — connect each English meaning with its Dutch word.</span>
+                  <span><strong>Match</strong> — connect each meaning with its {LANG_INFO[language].name} word.</span>
                 </li>
                 <li className="flex gap-3">
                   <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[13px] font-bold text-accent-dark">2</span>
@@ -123,21 +158,27 @@ export default function TestPage() {
           )
         )}
 
-        {phase === "match" && (
-          <MatchStep key={round} words={words} seed={`${today}-${round}`} onDone={() => setPhase("write")} />
+        {view === "new" && phase === "match" && (
+          <MatchStep key={round} words={words} seed={`${today}-${round}`}
+            onDone={(m) => { setMistakes(m); setPhase("write"); }} />
         )}
-        {(phase === "write" || phase === "results") && (
+        {view === "new" && (phase === "write" || phase === "results") && (
           <WriteStep key={round} words={words} today={today} results={phase === "results"}
-            onDone={() => setPhase("results")} onAgain={() => setPhase("pick")} />
+            onDone={finish} onAgain={() => setPhase("pick")} />
         )}
+        {view === "new" && phase === "results" && saveError && <p role="alert" className="text-sm text-due-ink">{saveError}</p>}
       </main>
     </>
   );
 }
 
-/* ---------- Step 1: match English with Dutch ---------- */
+/* ---------- Step 1: match translations with words ---------- */
 
-function MatchStep({ words, seed, onDone }: { words: TestWord[]; seed: string; onDone: () => void }) {
+function MatchStep({ words, seed, onDone }: { words: TestWord[]; seed: string; onDone: (mistakes: number) => void }) {
+  const { language } = usePrefs();
+  // Cards keep the translation language they were made with; name it when they all share one.
+  const kinds = [...new Set(words.map((w) => w.translation_lang))];
+  const translationHeader = kinds.length === 1 ? supportLabel(kinds[0]) : "Translation";
   const left = useMemo(() => stableShuffle(words, `${seed}-en`), [words, seed]);
   const right = useMemo(() => stableShuffle(words, `${seed}-nl`), [words, seed]);
   const [matched, setMatched] = useState<Set<string>>(new Set());
@@ -150,7 +191,7 @@ function MatchStep({ words, seed, onDone }: { words: TestWord[]; seed: string; o
     if (!en || !nl) return;
     const a = words.find((w) => w.id === en)!;
     const b = words.find((w) => w.id === nl)!;
-    // Two words can share an English meaning; then either Dutch word is right.
+    // Two words can share a translation; then either word is right.
     if (en === nl || englishOf(a.meaning_en).toLowerCase() === englishOf(b.meaning_en).toLowerCase()) {
       const next = new Set(matched);
       next.add(`en:${en}`);
@@ -185,11 +226,11 @@ function MatchStep({ words, seed, onDone }: { words: TestWord[]; seed: string; o
       <div className="h-1.5 overflow-hidden rounded-full bg-hairline" aria-hidden="true">
         <div className="h-full bg-accent transition-all" style={{ width: `${(count / words.length) * 100}%` }} />
       </div>
-      <p className="text-[15px] text-soft">Tap an English meaning, then the Dutch word that goes with it.</p>
+      <p className="text-[15px] text-soft">Tap a meaning, then the {LANG_INFO[language].name} word that goes with it.</p>
 
       <div className="grid grid-cols-2 gap-2.5">
         <div className="flex flex-col gap-2">
-          <span className="label">English</span>
+          <span className="label">{translationHeader}</span>
           {left.map((w) => (
             <button key={w.id} type="button" className={style("en", w.id)} disabled={matched.has(`en:${w.id}`)}
               aria-pressed={pickedEn === w.id}
@@ -200,9 +241,9 @@ function MatchStep({ words, seed, onDone }: { words: TestWord[]; seed: string; o
           ))}
         </div>
         <div className="flex flex-col gap-2">
-          <span className="label">Nederlands</span>
+          <span className="label">{LANG_INFO[language].native}</span>
           {right.map((w) => (
-            <button key={w.id} type="button" lang="nl" className={`${style("nl", w.id)} font-medium`}
+            <button key={w.id} type="button" lang={language} className={`${style("nl", w.id)} font-medium`}
               disabled={matched.has(`nl:${w.id}`)} aria-pressed={pickedNl === w.id}
               onClick={() => { setPickedNl(w.id); tryPair(pickedEn, w.id); }}>
               {matched.has(`nl:${w.id}`) && <span aria-hidden="true" className="mr-1.5">✓</span>}
@@ -215,7 +256,7 @@ function MatchStep({ words, seed, onDone }: { words: TestWord[]; seed: string; o
       <p role="status" className="text-sm text-soft">
         {wrong ? "Not a pair — try again." : done ? `All matched${mistakes ? ` with ${mistakes} mistake${mistakes > 1 ? "s" : ""}` : " without mistakes"}!` : ""}
       </p>
-      {done && <button type="button" className="btn-primary" onClick={onDone}>Next: write the words</button>}
+      {done && <button type="button" className="btn-primary" onClick={() => onDone(mistakes)}>Next: write the words</button>}
     </section>
   );
 }
@@ -226,9 +267,11 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
   words: TestWord[];
   today: string;
   results: boolean;
-  onDone: () => void;
+  onDone: (items: TestItem[]) => void;
   onAgain: () => void;
 }) {
+  const prefs = usePrefs();
+  const language = prefs.language;
   const [gaps, setGaps] = useState<Record<string, Gap> | null>(null);
   const [tab, setTab] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
@@ -239,7 +282,8 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
     async function load() {
       const tasks: Record<string, AiTask> = {};
       words.forEach((w) => {
-        if (w.review_task && w.review_task_on === today) tasks[w.id] = w.review_task;
+        const cached = cachedTask(w, today);
+        if (cached) tasks[w.id] = cached;
       });
       const missing = words.filter((w) => !tasks[w.id]).map((w) => w.id);
       if (missing.length > 0) {
@@ -253,7 +297,11 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
       if (!alive) return;
       const out: Record<string, Gap> = {};
       words.forEach((w) => {
-        out[w.id] = { task: tasks[w.id] ?? gapFromExamples(w), given: "", result: null };
+        out[w.id] = {
+          task: tasks[w.id] ?? (w.kind !== "word" ? expressionGap(w) : gapFromExamples(w)),
+          given: "",
+          result: null,
+        };
       });
       setGaps(out);
     }
@@ -291,7 +339,21 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
     const before = words.findIndex((x) => !gaps![x.id].result && x.id !== w.id);
     const next = after >= 0 ? after : before;
     if (next >= 0) setTab(next);
-    else onDone();
+    else {
+      onDone(
+        words.map((x) => {
+          const gap = gaps![x.id];
+          return {
+            word_id: x.id,
+            word: fullWord(x),
+            sentence: gap.task?.sentence ?? "",
+            answer: gap.task?.answer ?? fullWord(x),
+            given: gap.given.trim(),
+            correct: gap.result === "right",
+          };
+        }),
+      );
+    }
   }
 
   if (results) {
@@ -305,7 +367,7 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
         <ul className="panel overflow-hidden">
           {words.map((x) => (
             <li key={x.id} className="flex items-center justify-between gap-3 border-b border-hairline px-4 py-3 last:border-b-0">
-              <span lang="nl" className="font-semibold">{fullWord(x)}</span>
+              <span lang={language} className="font-semibold">{fullWord(x)}</span>
               <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${gaps[x.id].result === "right" ? "bg-good-soft text-good-ink" : "bg-due-soft text-due-ink"}`}>
                 {gaps[x.id].result === "right" ? "Right" : "Practise again"}
               </span>
@@ -350,7 +412,7 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
       <form id="sentence-panel" role="tabpanel" aria-label={`Sentence ${tab + 1}`} onSubmit={check}
         className="panel flex flex-col gap-4 p-5">
         {parts ? (
-          <p lang="nl" className="text-xl leading-relaxed">
+          <p lang={language} className="text-xl leading-relaxed">
             {parts[0]}
             <span className="mx-1 inline-block min-w-16 border-b-2 border-accent text-center font-semibold text-accent-dark">
               {g.result ? (g.result === "right" ? g.given.trim() : g.task!.answer) : " "}
@@ -358,18 +420,18 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
             {parts.slice(1).join("___")}
           </p>
         ) : (
-          <p className="text-xl leading-relaxed">Type the Dutch word for: <strong>{englishOf(w.meaning_en)}</strong></p>
+          <p className="text-xl leading-relaxed">Type the {LANG_INFO[language].name} word for: <strong>{englishOf(w.meaning_en)}</strong></p>
         )}
 
         {parts && g.task!.en && (showEn ? (
           <p className="text-[15px] text-soft">{g.task!.en}</p>
         ) : (
-          <button type="button" className="btn-small self-start" onClick={() => setShowEn(true)}>Show English</button>
+          <button type="button" className="btn-small self-start" onClick={() => setShowEn(true)}>Show {supportLabel(w.translation_lang)}</button>
         ))}
 
         <div className="flex flex-col gap-1.5">
           <label htmlFor="gap-answer" className="text-[13px] font-semibold text-soft">Your answer</label>
-          <input id="gap-answer" key={w.id} lang="nl" autoComplete="off" autoCapitalize="none" spellCheck={false}
+          <input id="gap-answer" key={w.id} lang={language} autoComplete="off" autoCapitalize="none" spellCheck={false}
             autoFocus value={g.given} readOnly={g.result !== null} onChange={(e) => setGiven(e.target.value)}
             className="field h-12 text-[17px]" />
         </div>
@@ -377,8 +439,8 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
         {g.result && (
           <div role="status"
             className={`flex items-center justify-between gap-3 rounded-xl px-4 py-3 ${g.result === "right" ? "bg-good-soft text-good-ink" : "bg-due-soft text-due-ink"}`}>
-            <span lang="nl" className="font-semibold">
-              {g.result === "right" ? "Goed!" : `The answer: ${g.task?.answer ?? fullWord(w)}`}
+            <span lang={language} className="font-semibold">
+              {g.result === "right" ? LANG_INFO[language].labels.good : `The answer: ${g.task?.answer ?? fullWord(w)}`}
             </span>
             <SpeakButton text={g.task ? g.task.sentence.replace("___", g.task.answer) : fullWord(w)} label="Play sentence" small />
           </div>
@@ -392,6 +454,147 @@ function WriteStep({ words, today, results, onDone, onAgain }: {
           <button type="submit" className="btn-primary" disabled={!g.given.trim()}>Check</button>
         )}
       </form>
+    </section>
+  );
+}
+
+/* ---------- My tests: every finished test, newest first ---------- */
+
+type TestRow = {
+  id: string;
+  language: string;
+  source: string;
+  total: number;
+  right_count: number;
+  match_mistakes: number;
+  items: TestItem[];
+  taken_at: string;
+};
+
+function MyTests() {
+  const { language } = usePrefs();
+  const [tests, setTests] = useState<TestRow[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ id: string } | "all" | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function remove(): Promise<string | null> {
+    if (!confirm) return null;
+    const db = supabase().from("tests").delete();
+    const { error: e } = confirm === "all" ? await db.eq("language", language) : await db.eq("id", confirm.id);
+    if (e) return `Nothing was deleted: ${e.message}`;
+    setTests((t) => (confirm === "all" ? [] : (t ?? []).filter((x) => x.id !== confirm.id)));
+    setNotice(confirm === "all" ? "All tests deleted." : "Test deleted.");
+    setConfirm(null);
+    setOpen(null);
+    return null;
+  }
+
+  const target = confirm && confirm !== "all" ? tests?.find((t) => t.id === confirm.id) : null;
+  const dialog = (
+    <ConfirmDialog open={confirm !== null} onCancel={() => setConfirm(null)} onConfirm={remove}
+      confirmLabel="Delete for good"
+      title={confirm === "all" ? `Delete all ${tests?.length ?? 0} tests?` : "Delete this test?"}
+      body={confirm === "all"
+        ? <>Every test result for this language is removed. Your words and review plan stay as they are. This cannot be undone.</>
+        : <>The result{target ? <> from <strong className="text-ink">{new Date(target.taken_at).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</strong> ({target.right_count}/{target.total})</> : null} is removed. Your words stay as they are. This cannot be undone.</>} />
+  );
+
+  useEffect(() => {
+    supabase()
+      .from("tests")
+      .select("id, language, source, total, right_count, match_mistakes, items, taken_at")
+      .eq("language", language)
+      .order("taken_at", { ascending: false })
+      .limit(50)
+      .then(({ data, error: e }) => {
+        if (e) setError(`Your tests could not be loaded: ${e.message}`);
+        else setTests((data ?? []) as TestRow[]);
+      });
+  }, [language]);
+
+  if (error) return <p role="alert" className="text-due-ink">{error}</p>;
+  if (!tests) return <p className="text-soft" aria-busy="true">Loading your tests…</p>;
+  if (tests.length === 0) {
+    return (
+      <div className="panel flex flex-col gap-2 p-5">
+        {notice && <p role="status" className="text-sm font-medium text-good-ink">{notice}</p>}
+        <h2 className="font-display text-xl font-bold">No tests yet</h2>
+        <p className="text-soft">Finish a test and it shows up here, with every answer you gave.</p>
+      </div>
+    );
+  }
+
+  const average = Math.round((tests.reduce((n, t) => n + t.right_count / Math.max(t.total, 1), 0) / tests.length) * 100);
+  const when = (iso: string) =>
+    new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+
+  return (
+    <section aria-label="My tests" className="flex flex-col gap-3">
+      {dialog}
+      {notice && <p role="status" className="rounded-xl bg-good-soft px-4 py-3 text-sm font-medium text-good-ink">{notice}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="panel flex flex-col p-4">
+          <span className="font-display text-2xl font-bold">{tests.length}</span>
+          <span className="text-xs text-muted">tests taken</span>
+        </div>
+        <div className="panel flex flex-col p-4">
+          <span className="font-display text-2xl font-bold">{average}%</span>
+          <span className="text-xs text-muted">average score</span>
+        </div>
+      </div>
+
+      <ul className="flex flex-col gap-2">
+        {tests.map((t) => {
+          const pct = Math.round((t.right_count / Math.max(t.total, 1)) * 100);
+          const expanded = open === t.id;
+          return (
+            <li key={t.id} className="panel overflow-hidden">
+              <button type="button" aria-expanded={expanded} onClick={() => setOpen(expanded ? null : t.id)}
+                className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left">
+                <span className="flex flex-col gap-0.5">
+                  <span className="text-[15px] font-semibold">{when(t.taken_at)}</span>
+                  <span className="text-xs text-muted">
+                    {t.total} words · {SOURCE_LABEL[t.source as Source] ?? "Test"} · {t.match_mistakes} matching {t.match_mistakes === 1 ? "mistake" : "mistakes"}
+                  </span>
+                </span>
+                <span className={`rounded-full px-2.5 py-1 text-sm font-bold ${pct >= 80 ? "bg-good-soft text-good-ink" : pct >= 50 ? "bg-accent-soft text-accent-dark" : "bg-due-soft text-due-ink"}`}>
+                  {t.right_count}/{t.total}
+                </span>
+              </button>
+              {expanded && (
+                <>
+                <ul className="border-t border-hairline">
+                  {t.items.map((it, i) => (
+                    <li key={i} className="flex flex-col gap-0.5 border-b border-hairline px-4 py-2.5 last:border-b-0">
+                      <span className="flex items-center justify-between gap-2">
+                        <span lang={t.language} className="font-semibold">{it.word}</span>
+                        <span className={`text-xs font-semibold ${it.correct ? "text-good-ink" : "text-due-ink"}`}>
+                          {it.correct ? "✓ Right" : "✗ Wrong"}
+                        </span>
+                      </span>
+                      {it.sentence && <span lang={t.language} className="text-[13px] text-soft">{it.sentence.replace("___", it.answer)}</span>}
+                      {!it.correct && (
+                        <span className="text-xs text-muted">You wrote: {it.given || "(nothing)"}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                <div className="border-t border-hairline px-4 py-2.5">
+                  <button type="button" onClick={() => setConfirm({ id: t.id })}
+                    className="text-sm font-semibold text-[#b42318]">Delete this test</button>
+                </div>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+
+      <button type="button" onClick={() => setConfirm("all")} className="btn-secondary h-11 text-[#b42318]">
+        Delete all tests
+      </button>
     </section>
   );
 }

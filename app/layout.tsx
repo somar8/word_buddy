@@ -8,7 +8,7 @@ const spaceGrotesk = Space_Grotesk({ variable: "--font-space-grotesk", subsets: 
 
 export const metadata: Metadata = {
   title: "Word Buddy",
-  description: "Remember every new Dutch word: smart cards and daily reviews.",
+  description: "Remember every new word in Dutch, German or English: smart cards, tests and daily reviews.",
   appleWebApp: { capable: true, title: "Word Buddy", statusBarStyle: "default" },
 };
 

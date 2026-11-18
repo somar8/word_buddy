@@ -56,7 +56,13 @@ function hash(text: string): number {
 }
 
 /** Each review gets a little harder; review 6 and learned-word checks mix the types. */
-export function taskFor(word: Pick<Word, "id" | "stage">, today: string): TaskType {
+export function taskFor(word: Pick<Word, "id" | "stage"> & { kind?: string }, today: string): TaskType {
+  const task = baseTask(word, today);
+  // Typing a whole expression with an article makes no sense: complete its key part instead.
+  return task === "type" && word.kind && word.kind !== "word" ? "complete" : task;
+}
+
+function baseTask(word: Pick<Word, "id" | "stage">, today: string): TaskType {
   switch (word.stage) {
     case 1:
       return "meaning";
