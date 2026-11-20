@@ -37,6 +37,8 @@ export type Word = Omit<Card, "found"> & {
   literal: string; // word-for-word meaning (idioms)
   usage: string; // when to use it
   key_word: string; // the part exercises blank out (expressions)
+  lapses: number; // times answered "Again"; 2+ = a hard word
+  last_reviewed_on: string | null;
   level: string; // level the card was made for (A1-C2)
   drawing: string | null; // the learner's own sketch (PNG data URL)
   stage: number; // 1..6 = next review number, 7 = learned
@@ -47,7 +49,16 @@ export type Word = Omit<Card, "found"> & {
   created_at: string;
 };
 
-export type TaskType = "meaning" | "type" | "gap" | "choose" | "write" | "complete";
+export type TaskType =
+  | "meaning" // see the word, recall the meaning
+  | "type" // see the meaning (in the learned language), type the word
+  | "recall" // see the translation, type the word
+  | "listen" // hear the word, type it
+  | "say" // see the translation, say the word
+  | "gap" // fill the gap in a fresh sentence
+  | "choose" // pick the word for the gap
+  | "write" // write your own sentence
+  | "complete"; // complete an expression (its key part is hidden)
 
 /** A single word, or one of the kinds of expression. */
 export type Kind = "word" | "phrase" | "idiom" | "saying" | "sentence";

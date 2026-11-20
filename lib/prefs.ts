@@ -13,7 +13,10 @@ export type Prefs = {
   support: SupportLang; // translation language for `language`
   showTranslation: ShowTranslation;
   speech: SpeechSpeed;
+  dailyGoal: number; // reviews per day
 };
+
+export const DAILY_GOALS = [5, 10, 15, 20, 30] as const;
 
 type Meta = Record<string, unknown> | null | undefined;
 
@@ -48,6 +51,7 @@ export function prefsFrom(meta: Meta): Prefs {
     support,
     showTranslation: show === "always" || show === "tap" ? show : "auto",
     speech: m.speech === "slow" ? "slow" : "normal",
+    dailyGoal: (DAILY_GOALS as readonly number[]).includes(Number(m.daily_goal)) ? Number(m.daily_goal) : 15,
   };
 }
 
@@ -62,6 +66,7 @@ export function metaFor(p: Omit<Prefs, "level">): Record<string, unknown> {
     translate_to: support, // the current language's translation language (mirrored into profiles)
     show_translation: p.showTranslation,
     speech: p.speech,
+    daily_goal: p.dailyGoal,
   };
 }
 

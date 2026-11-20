@@ -37,6 +37,7 @@ export const ERROR_TITLES: Record<string, string> = {
   auth: "Signed out",
   not_word: "Not recognised",
   single_word: "That's one word",
+  too_few_words: "Add a few more words first",
   daily_limit: "Daily AI limit reached",
   ai_quota: "AI is resting for a minute",
   ai_busy: "AI is busy",

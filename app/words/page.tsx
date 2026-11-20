@@ -6,21 +6,22 @@ import { usePrefs } from "@/components/AppShell";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import PageHeader from "@/components/PageHeader";
 import { matchesSearch, searchRank } from "@/lib/practice";
-import { dueLabel, stageLabel, statusOf, todayLocal, type WordStatus } from "@/lib/schedule";
+import { dueLabel, HARD_LAPSES, stageLabel, statusOf, todayLocal, type WordStatus } from "@/lib/schedule";
 import { supabase } from "@/lib/supabase";
 import { EXPRESSION_KINDS, KIND_LABEL, type Kind, type Word } from "@/lib/types";
 
 /** The two separate lists: single words, and expressions (phrases, idioms, sayings, sentences). */
 type List = "words" | "expressions";
-type Filter = "all" | WordStatus;
+type Filter = "all" | WordStatus | "hard";
 const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "due", label: "Due today" },
   { id: "learning", label: "Learning" },
   { id: "learned", label: "Learned" },
+  { id: "hard", label: "Hard" },
 ];
 
-type Row = Pick<Word, "id" | "word" | "article" | "meaning_nl" | "meaning_en" | "related" | "note" | "stage" | "due_on" | "kind" | "literal" | "usage">;
+type Row = Pick<Word, "id" | "word" | "article" | "meaning_nl" | "meaning_en" | "related" | "note" | "stage" | "due_on" | "kind" | "literal" | "usage" | "lapses">;
 
 const isExpression = (w: Pick<Row, "kind">) => (w.kind ?? "word") !== "word";
 
@@ -49,7 +50,7 @@ export default function WordsPage() {
   useEffect(() => {
     supabase()
       .from("words")
-      .select("id, word, article, meaning_nl, meaning_en, related, note, stage, due_on, kind, literal, usage")
+      .select("id, word, article, meaning_nl, meaning_en, related, note, stage, due_on, kind, literal, usage, lapses")
       .eq("language", language)
       .order("added_on", { ascending: false })
       .order("created_at", { ascending: false })
@@ -66,7 +67,7 @@ export default function WordsPage() {
   const shown = useMemo(() => {
     const matches = current.filter(
       (w) =>
-        (filter === "all" || statusOf(w, today) === filter) &&
+        (filter === "all" || (filter === "hard" ? (w.lapses ?? 0) >= HARD_LAPSES : statusOf(w, today) === filter)) &&
         (list === "words" || kind === "all" || w.kind === kind) &&
         matchesSearch(w, query),
     );

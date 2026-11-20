@@ -7,6 +7,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import PageHeader from "@/components/PageHeader";
 import SpeakButton from "@/components/SpeakButton";
 import { LANG_INFO } from "@/lib/languages";
+import { HARD_LAPSES } from "@/lib/schedule";
 import { cachedTask, englishOf, expressionGap, gapFromExamples } from "@/lib/practice";
 import { supportLabel } from "@/lib/prefs";
 import { fullWord, normalize, stableShuffle, todayLocal } from "@/lib/schedule";
@@ -17,9 +18,9 @@ const MAX_WORDS = 20;
 
 type TestWord = Pick<
   Word,
-  "id" | "word" | "article" | "meaning_en" | "translation_lang" | "kind" | "key_word" | "examples" | "review_task" | "review_task_on" | "added_on" | "due_on"
+  "id" | "word" | "article" | "meaning_en" | "translation_lang" | "kind" | "key_word" | "examples" | "review_task" | "review_task_on" | "added_on" | "due_on" | "lapses"
 >;
-type Source = "added" | "due" | "recent";
+type Source = "added" | "due" | "hard" | "recent";
 type Phase = "pick" | "match" | "write" | "results";
 type Gap = { task: AiTask | null; given: string; result: "right" | "wrong" | null };
 export type TestItem = { word_id: string; word: string; sentence: string; answer: string; given: string; correct: boolean };
@@ -27,8 +28,16 @@ export type TestItem = { word_id: string; word: string; sentence: string; answer
 const SOURCE_LABEL: Record<Source, string> = {
   added: "Added today",
   due: "Due today",
+  hard: "My hard words",
   recent: "My last 10 words",
 };
+
+function inPool(source: Source, w: TestWord, today: string): boolean {
+  if (source === "added") return w.added_on === today;
+  if (source === "due") return w.due_on <= today;
+  if (source === "hard") return (w.lapses ?? 0) >= HARD_LAPSES;
+  return true;
+}
 
 export default function TestPage() {
   const [today] = useState(todayLocal);
@@ -46,26 +55,17 @@ export default function TestPage() {
   useEffect(() => {
     supabase()
       .from("words")
-      .select("id, word, article, meaning_en, translation_lang, kind, key_word, examples, review_task, review_task_on, added_on, due_on")
+      .select("id, word, article, meaning_en, translation_lang, kind, key_word, examples, review_task, review_task_on, added_on, due_on, lapses")
       .eq("language", language)
-      .or(`added_on.eq.${today},due_on.lte.${today}`)
       .order("created_at", { ascending: false })
-      .limit(100)
-      .then(async ({ data, error: e }) => {
+      .limit(500)
+      .then(({ data, error: e }) => {
         if (e) return setError(e.message);
-        let list = (data ?? []) as TestWord[];
-        if (list.length === 0) {
-          const recent = await supabase()
-            .from("words")
-            .select("id, word, article, meaning_en, translation_lang, kind, key_word, examples, review_task, review_task_on, added_on, due_on")
-            .eq("language", language)
-            .order("created_at", { ascending: false })
-            .limit(10);
-          list = (recent.data ?? []) as TestWord[];
-          setSource("recent");
-        } else if (!list.some((w) => w.added_on === today)) {
-          setSource("due");
-        }
+        const list = (data ?? []) as TestWord[];
+        // /test#hard (from Progress) starts on the hard words.
+        const wanted = typeof window !== "undefined" && window.location.hash === "#hard" ? "hard" : null;
+        const has = (src: Source) => list.some((w) => inPool(src, w, today));
+        setSource(wanted && has("hard") ? "hard" : has("added") ? "added" : has("due") ? "due" : "recent");
         setAll(list);
       });
   }, [today, language]);
@@ -73,8 +73,9 @@ export default function TestPage() {
   const pools = useMemo(() => {
     const list = all ?? [];
     return {
-      added: list.filter((w) => w.added_on === today),
-      due: list.filter((w) => w.due_on <= today),
+      added: list.filter((w) => inPool("added", w, today)),
+      due: list.filter((w) => inPool("due", w, today)),
+      hard: list.filter((w) => inPool("hard", w, today)),
       recent: list.slice(0, 10),
     } satisfies Record<Source, TestWord[]>;
   }, [all, today]);
@@ -138,7 +139,7 @@ export default function TestPage() {
               </ol>
               <fieldset className="flex flex-col gap-2">
                 <legend className="mb-2 text-sm font-semibold text-soft">Which words?</legend>
-                {(["added", "due", "recent"] as Source[]).map((s) => (
+                {(["added", "due", "hard", "recent"] as Source[]).map((s) => (
                   <label key={s}
                     className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 ${source === s ? "border-accent bg-accent-soft" : "border-line bg-white"} ${pools[s].length === 0 ? "opacity-50" : ""}`}>
                     <span className="flex items-center gap-3">

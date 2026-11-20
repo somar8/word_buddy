@@ -7,7 +7,7 @@ import LevelPicker, { LanguagePicker, Segmented } from "@/components/LevelPicker
 import PageHeader from "@/components/PageHeader";
 import { LANG_INFO, SUPPORT_LANGUAGES, type Lang, type SupportLang } from "@/lib/languages";
 import type { Level } from "@/lib/levels";
-import { withLanguage, withSupport, type Prefs, type ShowTranslation, type SpeechSpeed } from "@/lib/prefs";
+import { DAILY_GOALS, withLanguage, withSupport, type Prefs, type ShowTranslation, type SpeechSpeed } from "@/lib/prefs";
 import { api, supabase } from "@/lib/supabase";
 
 function urlBase64ToUint8Array(base64: string): Uint8Array<ArrayBuffer> {
@@ -224,6 +224,10 @@ function PreferencesSection() {
       <Segmented<SpeechSpeed> legend="Pronunciation speed" name="speech" columns={2} value={draft.speech}
         onChange={(speech) => set({ speech })}
         options={[{ value: "slow", label: "Slow" }, { value: "normal", label: "Normal" }]} />
+
+      <Segmented<string> legend="Daily goal (reviews a day)" name="goal" columns={5} value={String(draft.dailyGoal)}
+        onChange={(v) => set({ dailyGoal: Number(v) })}
+        options={DAILY_GOALS.map((g) => ({ value: String(g), label: String(g) }))} />
 
       <button type="button" className="btn-primary" disabled={busy || !changed} onClick={save}>
         {busy ? "Saving…" : "Save preferences"}

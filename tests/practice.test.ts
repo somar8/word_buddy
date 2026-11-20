@@ -55,3 +55,40 @@ test("a cached sentence is only reused for today and the card's translation lang
   const old = { sentence: "x ___", answer: "y", en: "z", distractors: [] };
   assert.equal(cachedTask({ review_task: old, review_task_on: "2026-11-18", translation_lang: "ar" }, "2026-11-18"), null);
 });
+
+test("closeEnough forgives one slip, capitals and accents, but not another word", async () => {
+  const { closeEnough } = await import("../lib/practice");
+  assert.equal(closeEnough("fiest", "fiets"), true);
+  assert.equal(closeEnough("De Straße", "die strasse"), false); // wrong article is a different word group
+  assert.equal(closeEnough("strasse", "Straße"), true);
+  assert.equal(closeEnough("cafe", "café"), true);
+  assert.equal(closeEnough("fles", "fiets"), false);
+  assert.equal(closeEnough("op", "of"), false); // short words must be exact
+  assert.equal(closeEnough("jemandem die daumen drucken", "jemandem die Daumen drücken"), true);
+});
+
+test("search ranks the word itself above matches in its meaning", async () => {
+  const { searchRank } = await import("../lib/practice");
+  assert.equal(searchRank({ word: "fiets" }, "fiets"), 0);
+  assert.equal(searchRank({ word: "fietsen" }, "fiets"), 1);
+  assert.equal(searchRank({ word: "racefiets" }, "fiets"), 2);
+  assert.equal(searchRank({ word: "auto" }, "fiets"), 3);
+  assert.equal(searchRank({ word: "auto" }, ""), 0);
+});
+
+test("editDistance counts additions, removals, changes and swaps as one each", async () => {
+  const { editDistance } = await import("../lib/practice");
+  assert.equal(editDistance("fiets", "fiets"), 0);
+  assert.equal(editDistance("fiets", "fiet"), 1);
+  assert.equal(editDistance("fiets", "fietsen"), 2);
+  assert.equal(editDistance("fiets", "fiest"), 1);
+  assert.equal(editDistance("", "abc"), 3);
+});
+
+test("expression gaps use the AI key part, or the longest meaningful word", async () => {
+  const { expressionGap, keyPart } = await import("../lib/practice");
+  assert.equal(keyPart("to pull someone's leg", ""), "pull");
+  // Only short or placeholder words: nothing sensible to hide, so no gap exercise.
+  assert.equal(keyPart("op de", ""), "");
+  assert.equal(expressionGap({ word: "op de", key_word: "", examples: [] }), null);
+});

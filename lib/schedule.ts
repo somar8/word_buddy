@@ -37,17 +37,46 @@ export function firstDueDate(today: string, wordsAddedToday: number): string {
   return addDays(today, 1 + Math.floor(wordsAddedToday / MAX_NEW_WORDS_PER_DAY));
 }
 
-/** Where a word goes after an answer. */
-export function nextState(
-  stage: number,
-  correct: boolean,
-  today: string,
-): { stage: number; due_on: string } {
-  if (!correct) return { stage: 1, due_on: addDays(today, 1) };
-  if (stage >= 6) return { stage: LEARNED, due_on: addDays(today, LEARNED_CHECK_DAYS) };
-  const gap = REVIEW_DAYS[stage] - REVIEW_DAYS[stage - 1];
-  return { stage: stage + 1, due_on: addDays(today, gap) };
+/** How well you knew it. "Again" = you didn't. */
+export type Rating = "again" | "hard" | "good" | "easy";
+
+/** Days until the next review when you answer "Good" at this stage. */
+function gapAfter(stage: number): number {
+  if (stage >= 6) return LEARNED_CHECK_DAYS;
+  return REVIEW_DAYS[stage] - REVIEW_DAYS[stage - 1];
 }
+
+/**
+ * Where a word goes after an answer:
+ * - Again: two reviews back (not to the start), and tomorrow.
+ * - Hard:  same review again, after half the usual gap.
+ * - Good:  next review, after the usual gap (days 1, 3, 7, 14, 30, 60, then learned).
+ * - Easy:  skips a review.
+ * Learned words: Again -> review 5 tomorrow, Hard -> check in 30 days, Good -> 90, Easy -> 180.
+ */
+export function nextState(stage: number, rating: Rating, today: string): { stage: number; due_on: string } {
+  if (stage >= LEARNED) {
+    if (rating === "again") return { stage: 5, due_on: addDays(today, 1) };
+    const days = rating === "hard" ? 30 : rating === "easy" ? LEARNED_CHECK_DAYS * 2 : LEARNED_CHECK_DAYS;
+    return { stage: LEARNED, due_on: addDays(today, days) };
+  }
+  switch (rating) {
+    case "again":
+      return { stage: Math.max(1, stage - 2), due_on: addDays(today, 1) };
+    case "hard":
+      return { stage, due_on: addDays(today, Math.max(1, Math.ceil(gapAfter(stage) / 2))) };
+    case "good":
+      return { stage: Math.min(LEARNED, stage + 1), due_on: addDays(today, gapAfter(stage)) };
+    case "easy": {
+      const next = Math.min(LEARNED, stage + 2);
+      const days = gapAfter(stage) + (stage + 1 < LEARNED ? gapAfter(stage + 1) : 0);
+      return { stage: next, due_on: addDays(today, days) };
+    }
+  }
+}
+
+/** A word you keep forgetting: answered "Again" this many times. */
+export const HARD_LAPSES = 2;
 
 function hash(text: string): number {
   let h = 0;
@@ -55,31 +84,42 @@ function hash(text: string): number {
   return Math.abs(h);
 }
 
-/** Each review gets a little harder; review 6 and learned-word checks mix the types. */
+/**
+ * Each review gets a little harder, and mixes reading, writing, listening and speaking:
+ * 1 meaning · 2 type / recall from the translation / listen · 3 gap / listen · 4 choose / say it · 5 write ·
+ * 6 and learned checks: any of them. Picked per word and day, so it varies but doesn't jump around.
+ */
 export function taskFor(word: Pick<Word, "id" | "stage"> & { kind?: string }, today: string): TaskType {
   const task = baseTask(word, today);
   // Typing a whole expression with an article makes no sense: complete its key part instead.
-  return task === "type" && word.kind && word.kind !== "word" ? "complete" : task;
+  if ((task === "type" || task === "recall") && word.kind && word.kind !== "word") return "complete";
+  return task;
+}
+
+function pick(options: TaskType[], seed: string): TaskType {
+  return options[hash(seed) % options.length];
 }
 
 function baseTask(word: Pick<Word, "id" | "stage">, today: string): TaskType {
+  const seed = word.id + today;
   switch (word.stage) {
     case 1:
       return "meaning";
     case 2:
-      return "type";
+      return pick(["type", "recall", "listen"], seed);
     case 3:
-      return "gap";
+      return pick(["gap", "gap", "listen"], seed);
     case 4:
-      return "choose";
+      return pick(["choose", "say"], seed);
     case 5:
       return "write";
-    default: {
-      const mixed: TaskType[] = ["meaning", "type", "gap", "choose"];
-      return mixed[hash(word.id + today) % mixed.length];
-    }
+    default:
+      return pick(["meaning", "type", "recall", "gap", "choose", "listen", "say"], seed);
   }
 }
+
+/** Exercises that need the phone's voice (listen) or microphone (say), and what replaces them. */
+export const AUDIO_FALLBACK: Partial<Record<TaskType, TaskType>> = { listen: "type", say: "recall" };
 
 export function needsAiTask(task: TaskType): boolean {
   return task === "gap" || task === "choose";

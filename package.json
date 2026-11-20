@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/*.test.ts"
+    "test": "tsx --test tests/*.test.ts",
+    "test:coverage": "node --import tsx --test --experimental-test-coverage --test-coverage-include='lib/**' tests/*.test.ts",
+    "test:db": "bash supabase/tests/run.sh"
   },
   "dependencies": {
     "@google/genai": "^3.4.0",

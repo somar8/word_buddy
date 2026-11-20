@@ -142,3 +142,34 @@ export function cachedTask(
   if (!t || w.review_task_on !== today) return null;
   return (t.lang ?? "en") === (w.translation_lang ?? "en") ? t : null;
 }
+
+/** Edit distance between two strings: letters added, removed or changed, and two letters swapped, each count 1. */
+export function editDistance(a: string, b: string): number {
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  }
+  return d[a.length][b.length];
+}
+
+/**
+ * Whether a typed or spoken answer is close enough. Capitals, punctuation and accents don't count.
+ * Word by word: short words (articles, "op", "in"…) must be exact; longer words may have one slip
+ * per 8 letters, so "fiest" passes for "fiets" but "de" never passes for "die".
+ */
+export function closeEnough(given: string, target: string): boolean {
+  const clean = (x: string) => fold(x).replace(/[.,!?;:"“”‘’()]/g, " ").split(" ").filter(Boolean);
+  const g = clean(given);
+  const t = clean(target);
+  if (g.length === 0 || g.length !== t.length) return false;
+  return t.every((word, i) => {
+    if (word.length <= 3) return g[i] === word;
+    return editDistance(g[i], word) <= Math.max(1, Math.floor(word.length / 8));
+  });
+}

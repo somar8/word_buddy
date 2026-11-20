@@ -53,7 +53,7 @@ export default function Login() {
               emailRedirectTo: confirmUrl(),
               data: metaFor({
                 language, levels: { [language]: level! }, support, supports: { [language]: support },
-                showTranslation: "auto", speech: "normal",
+                showTranslation: "auto", speech: "normal", dailyGoal: 15,
               }),
             },
           });

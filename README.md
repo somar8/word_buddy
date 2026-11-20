@@ -55,14 +55,23 @@ No credit card is needed for any of these.
   **My tests** lists every finished test with your answers (`tests` table).
 - **Search** (`app/words`): finds words by the word, article + word, meaning, translation, related words or note,
   ignoring capitals and accents.
-- **Review** (`app/review`): up to 60 words a day. The exercise type follows the review number:
-  1 meaning → 2 type the word with de/het → 3 fill the gap → 4 choose the word → 5 write your own sentence → 6 mixed.
-  Fresh gap sentences for all of the day's words come from ONE Gemini call (`/api/tasks`), which stores them for that day.
-  A correct answer moves the word on; a wrong answer sends it back to review 1 tomorrow.
+- **Review** (`app/review`): up to 60 words a day. After each answer you rate it **Again / Hard / Good / Easy**
+  (a wrong typed answer counts as Again). Good follows days 1, 3, 7, 14, 30, 60, then a check every 90 days; Hard repeats
+  the step after half the gap; Easy skips a step; Again goes **two steps back** (not to the start) and comes back tomorrow.
+  The exercises mix reading, writing, listening and speaking: meaning → type it / from the translation / listen and type →
+  fill the gap / listen → choose / say it (the phone's own speech recognition) → write your own sentence → mixed.
+  "Can't listen / speak now" swaps to a typing exercise. Typing allows one small slip per word (not in articles).
+  Words answered Again 2+ times are **hard words** (Progress, My list → Hard, Test → My hard words). Logic: `lib/schedule.ts`.
+- **Daily story** (`app/story`, `app/api/story`): once a day the AI writes a short text at your level with up to 7 of your
+  most recent words, highlighted (tap for the meaning), with a translation, read-aloud and 3 questions. Stored per day.
+- **Progress** (`app/progress`): streak (days in a row with a review, test or story), today's goal (Settings → daily goal),
+  the last 7 days, reviews per day, where your words are in the schedule, and your hard words.
 - **My list** (`app/words`, the menu item at the bottom): search, filters, the page of each word or expression,
   a date picker to pin a review date, and delete.
 - **Reminder**: Vercel runs `/api/cron/remind` once a day (`vercel.json`, 07:00 UTC, which is 08:00–10:00 in the Netherlands) and pushes "N woorden wachten op je".
-- The schedule logic lives in `lib/schedule.ts` and the settings in `lib/config.ts`. Run the tests with `npm test`.
+- The schedule logic lives in `lib/schedule.ts` and the settings in `lib/config.ts`. Tests: `npm test` (55 unit tests), `npm run test:coverage` (the same, with coverage: about 97% of `lib/`),
+  `npm run test:db` (31 database checks on a throwaway local Postgres: privacy between users, limits, deletes;
+  needs Postgres installed, nothing touches Supabase).
 
 ## Set it up (about 30 minutes, once)
 

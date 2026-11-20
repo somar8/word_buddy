@@ -26,9 +26,10 @@ test("blankOut and expressionGap make a fill-in exercise", () => {
 });
 
 test("expressions get 'complete the expression' instead of 'type the word with its article'", () => {
-  assert.equal(taskFor({ id: "a", stage: 2, kind: "word" }, "2026-11-18"), "type");
-  assert.equal(taskFor({ id: "a", stage: 2, kind: "idiom" }, "2026-11-18"), "complete");
-  assert.equal(taskFor({ id: "a", stage: 3, kind: "idiom" }, "2026-11-18"), "gap");
+  // Find a word whose review-2 exercise is "type" or "recall"; as an expression it becomes "complete".
+  const id = ["a", "b", "c", "d", "e", "f"].find((x) => ["type", "recall"].includes(taskFor({ id: x, stage: 2, kind: "word" }, "2026-11-18")))!;
+  assert.equal(taskFor({ id, stage: 2, kind: "idiom" }, "2026-11-18"), "complete");
+  assert.ok(["gap", "listen"].includes(taskFor({ id: "a", stage: 3, kind: "idiom" }, "2026-11-18")));
 });
 
 test("toExpressionKind never returns word and maps odd AI values", async () => {

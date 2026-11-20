@@ -14,6 +14,8 @@ create table if not exists public.words (
   literal text not null default '',   -- word-for-word meaning (idioms)
   usage text not null default '',     -- when to use it: formal, informal, spoken...
   key_word text not null default '',  -- the part exercises blank out (expressions)
+  lapses int not null default 0,      -- times answered "Again"; 2+ = a hard word
+  last_reviewed_on date,
   article text not null default '' check (article in ('', 'de', 'het', 'der', 'die', 'das')),
   part_of_speech text not null default '',
   forms text not null default '',
@@ -48,6 +50,9 @@ alter table public.words add column if not exists kind text not null default 'wo
 alter table public.words add column if not exists literal text not null default '';
 alter table public.words add column if not exists usage text not null default '';
 alter table public.words add column if not exists key_word text not null default '';
+-- Ratings and hard words.
+alter table public.words add column if not exists lapses int not null default 0;
+alter table public.words add column if not exists last_reviewed_on date;
 alter table public.words drop constraint if exists words_article_check;
 alter table public.words add constraint words_article_check
   check (article in ('', 'de', 'het', 'der', 'die', 'das'));
@@ -66,8 +71,10 @@ create table if not exists public.reviews (
   stage int not null,
   task text not null,
   correct boolean not null,
+  rating text,                       -- again / hard / good / easy
   reviewed_at timestamptz not null default now()
 );
+alter table public.reviews add column if not exists rating text;
 
 create index if not exists reviews_user_time on public.reviews (user_id, reviewed_at);
 
@@ -94,6 +101,34 @@ create table if not exists public.tests (
   taken_at timestamptz not null default now()
 );
 create index if not exists tests_user_time on public.tests (user_id, taken_at desc);
+
+-- Daily story: one short AI text per user, language and day, using their own words.
+create table if not exists public.stories (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  language text not null,
+  day date not null,
+  word_ids jsonb not null default '[]'::jsonb,
+  content jsonb not null,            -- { title, text, translation, questions: [...] }
+  score int,                         -- questions right, once answered
+  created_at timestamptz not null default now(),
+  unique (user_id, language, day)
+);
+
+-- Practice per day, for the Progress page and the streak (runs as the user, so RLS applies).
+create or replace function public.practice_days(lang text, tz text, since date)
+returns table (day date, reviews bigint, correct bigint)
+language sql stable set search_path = '' as $$
+  select (r.reviewed_at at time zone tz)::date as day,
+         count(*) as reviews,
+         count(*) filter (where r.correct) as correct
+  from public.reviews r
+  join public.words w on w.id = r.word_id
+  where r.user_id = auth.uid() and w.language = lang
+    and (r.reviewed_at at time zone tz)::date >= since
+  group by 1
+  order by 1;
+$$;
 
 -- ---------------------------------------------------------------------------
 -- Users. Supabase keeps accounts in auth.users (Dashboard > Authentication > Users).
@@ -197,6 +232,7 @@ alter table public.words enable row level security;
 alter table public.reviews enable row level security;
 alter table public.push_subscriptions enable row level security;
 alter table public.tests enable row level security;
+alter table public.stories enable row level security;
 alter table public.profiles enable row level security;
 alter table public.sign_ins enable row level security;
 alter table public.ai_usage enable row level security;
@@ -226,3 +262,7 @@ create policy "read own sign-ins" on public.sign_ins for select using (user_id =
 
 drop policy if exists "read own ai usage" on public.ai_usage;
 create policy "read own ai usage" on public.ai_usage for select using (user_id = auth.uid());
+
+drop policy if exists "own stories" on public.stories;
+create policy "own stories" on public.stories
+  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
